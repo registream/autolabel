@@ -398,9 +398,12 @@ def _resolve_version(
     if version != "latest":
         return version, SCHEMA_VERSION
 
+    # Server defaults schema_max=1.0 for old-client backward compat. Send
+    # SCHEMA_VERSION explicitly so the server returns the latest version
+    # whose schema fits what this client can parse (schema 2.0).
     info_url = (
         f"{get_api_host()}/api/v1/datasets/{domain}/variables/{lang}/latest/info"
-        f"?format=stata"
+        f"?format=stata&schema_max={SCHEMA_VERSION}"
     )
     try:
         response = requests.get(info_url, timeout=DOWNLOAD_TIMEOUT_SECONDS)
