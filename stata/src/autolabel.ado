@@ -4,7 +4,7 @@ program define autolabel
 
 	* Core check: registream must be installed. Each package ships its own
 	* files only; modules depend on core being present on adopath. See
-	* design/packaging.md (decoupled-for-SSC strategy).
+	* registream-docs/architecture/version_coordination.md.
 	cap findfile _rs_utils.ado
 	if _rc != 0 {
 		di as error ""
@@ -13,9 +13,17 @@ program define autolabel
 		di as error "autolabel requires the registream core package. Install it first:"
 		di as error `"  ssc install registream"'
 		di as error "  (or from GitHub:)"
-		di as error `"  net install registream, from("https://registream.org/install/stata/latest") replace"'
+		di as error `"  net install registream, from("https://registream.org/install/stata/registream/latest") replace"'
 		di as error ""
 		exit 198
+	}
+
+	* Min-core version check (Phase 4 of version_coordination.md). MIN_CORE
+	* is build-injected from packages.json; in source mode it stays as the
+	* literal placeholder, which the regex guard treats as "skip".
+	local AUTOLABEL_MIN_CORE "{{MIN_CORE}}"
+	if (regexm("`AUTOLABEL_MIN_CORE'", "^[0-9]")) {
+		_rs_check_core_version "autolabel" "`AUTOLABEL_MIN_CORE'"
 	}
 
 	* Get core version from helper function (can be overridden by stata/dev/version_override.do)
