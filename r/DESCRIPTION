@@ -1,0 +1,26 @@
+Package: autolabel
+Title: Apply Variable and Value Labels to Register Data
+Version: 3.0.0
+Authors@R: c(
+    person("Jeffrey", "Clark", role = c("aut", "cre"),
+           email = "jeffrey@registream.org"),
+    person("Jie", "Wen", role = "aut",
+           email = "jie@registream.org"))
+Description: Applies curated variable and value labels from the
+    RegiStream metadata catalog to data frames of administrative
+    register data. Labels are stored as column attributes via the
+    'haven' labelled convention so they round-trip through Stata DTA
+    files and integrate cleanly with tidyverse and base R workflows.
+License: BSD_3_clause + file LICENSE
+Depends:
+    R (>= 4.1)
+Imports:
+    registream (>= 3.0.0),
+    haven
+Suggests:
+    testthat (>= 3.0.0),
+    withr,
+    knitr,
+    rmarkdown
+Encoding: UTF-8
+Config/testthat/edition: 3

@@ -1,0 +1,42 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "registream-autolabel"
+version = "3.0.0"
+description = "RegiStream Autolabel: accessor for register data labeling."
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [
+    { name = "Jeffrey Clark", email = "jeffrey@registream.org" },
+    { name = "Jie Wen", email = "jie@registream.org" },
+]
+dependencies = [
+    "pandas>=3.0.2",
+    "registream-core>=3.0,<4.0",
+    "tqdm>=4.67.3",
+]
+
+# Local-dev path override. Stripped from the published wheel; pip never sees
+# this section. Assumes all RegiStream repos are cloned as siblings under one
+# parent directory (the convention in registream-org/).
+[tool.uv.sources]
+registream-core = { path = "../../../registream/python/registream-core", editable = true }
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/registream"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.3",
+    "requests>=2.32",
+    "seaborn>=0.13",
+    "matplotlib>=3.9",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "integration: tests that require the dev API server at localhost:5000",
+]

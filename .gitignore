@@ -1,0 +1,12 @@
+# Logs
+*.log
+
+# Stata temp files
+*.smcl
+
+# Large metadata files (served from API)
+metadata-v2/
+metadata-v2-sample/
+
+# OS files
+.DS_Store
