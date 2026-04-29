@@ -18,19 +18,22 @@ program define autolabel
 		exit 198
 	}
 
-	* Min-core version check (Phase 4 of version_coordination.md). MIN_CORE
-	* is build-injected from packages.json; in source mode it stays as the
-	* literal placeholder, which the regex guard treats as "skip".
-	local AUTOLABEL_MIN_CORE "{{MIN_CORE}}"
-	if (regexm("`AUTOLABEL_MIN_CORE'", "^[0-9]")) {
-		_rs_check_core_version "autolabel" "`AUTOLABEL_MIN_CORE'"
-	}
-
-	* Get core version from helper function (can be overridden by stata/dev/version_override.do)
+	* Get core version (can be overridden by stata/dev/version_override.do).
 	_rs_utils get_version
 	local REGISTREAM_VERSION "`r(version)'"
 	local pkg_version "`r(version)'"
     local release_date "{{DATE}}"
+
+	* Min-core version check (Phase 4 of version_coordination.md). MIN_CORE
+	* is build-injected from packages.json; in source mode it stays as the
+	* literal placeholder, which the regex guard treats as "skip". Routed
+	* through the _rs_utils dispatcher because Stata's autoloader registers
+	* only the filename-matched program — nested programs in _rs_utils.ado
+	* aren't directly callable from outside.
+	local AUTOLABEL_MIN_CORE "{{MIN_CORE}}"
+	if (regexm("`AUTOLABEL_MIN_CORE'", "^[0-9]")) {
+		_rs_utils check_core_version "autolabel" "`AUTOLABEL_MIN_CORE'"
+	}
 
 	* Autolabel module version (stamped from packages.json by export_package.py)
 	local AUTOLABEL_VERSION "{{VERSION}}"
