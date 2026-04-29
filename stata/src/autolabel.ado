@@ -2568,6 +2568,23 @@ program define _al_collapse_v2, rclass
 		* Now load the variables data
 		quietly use "`dta'", clear
 
+		* variable_name is the merge key for downstream joins. Some bundles
+		* ship it as strL (Stata's variable-length string) when source values
+		* include non-ASCII bytes; `merge` cannot use strL keys. Convert via
+		* gen→drop→rename then save+reload so stale strL pool references are
+		* cleared (otherwise a later `save` reports the strL component as
+		* corrupt). No-op when already str#.
+		local _vn_type : type variable_name
+		if ("`_vn_type'" == "strL") {
+			qui gen str244 _vn_fixed = variable_name
+			qui drop variable_name
+			qui rename _vn_fixed variable_name
+			qui compress variable_name
+			tempfile _vn_fixed_dta
+			qui save "`_vn_fixed_dta'", replace
+			qui use "`_vn_fixed_dta'", clear
+		}
+
 		* Apply release filter if computed
 		if "`release'" != "" {
 			quietly merge m:1 release_set_id using `_surviving_rsids', keep(3) nogen
