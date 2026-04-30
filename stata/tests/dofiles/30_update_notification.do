@@ -6,7 +6,8 @@
 
   Approach:
     1. Clean install autolabel 3.0.0 from localhost:5000
-    2. Create fake 3.0.1 on server (bump package_versions.json)
+    2. Create fake 3.0.1 on server (overwrite package_manifest.yaml via
+       stata/dev/write_test_manifest.py)
     3. Verify update detection via heartbeat
     4. Verify notification globals are set
     5. Verify registream update installs the new version
@@ -64,17 +65,21 @@ cap adopath - "$PROJECT_ROOT/../registream/stata/src"
 * etc.) so the end-to-end install flow doesn't block. host_override.do is
 * sourced AFTER net install so the installed `_rs_utils get_api_host` resolves
 * to localhost — otherwise heartbeat and dataset-update checks below would hit
-* production and fail (they rely on this repo's local package_versions.json
+* production and fail (they rely on this repo's local package_manifest.yaml
 * and fake dataset zips).
 do "$PROJECT_ROOT/../registream/stata/dev/auto_approve.do"
 
 * ==========================================================================
 * Configuration — all paths in one place. Assumes sibling-repo layout under
-* registream-org/ (registream, autolabel, registream.org side-by-side).
+* registream-org/ (registream, autolabel, registream-website side-by-side).
+* The dev server reads package_manifest.yaml from registream-website/data/;
+* sub-tests overwrite it via stata/dev/write_test_manifest.py to bump the
+* server's reported "latest" version, then heartbeat to verify detection.
 * ==========================================================================
 
-local server_data "$PROJECT_ROOT/../registream.org/data/registream"
-local pkg_versions "`server_data'/package_versions.json"
+local server_data "$PROJECT_ROOT/../registream-website/data/registream"
+local pkg_versions "`server_data'/package_manifest.yaml"
+local manifest_helper "$PROJECT_ROOT/stata/dev/write_test_manifest.py"
 local install_url "http://localhost:5000/install/stata/latest"
 local lisa "$PROJECT_ROOT/examples/lisa.dta"
 
@@ -151,7 +156,7 @@ di as result "{hline 70}"
 local ++total
 
 * Set server to report same version as what we're running
-shell echo '{"registream": "`current_version'", "autolabel": "`current_version'", "datamirror": "1.0.0"}' > "`pkg_versions'"
+shell python3 "`manifest_helper'" "`pkg_versions'" registream=`current_version' autolabel=`current_version' datamirror=1.0.0
 
 * Expire cache to force check
 local now = clock("`c(current_date)' `c(current_time)'", "DMY hms")
@@ -185,7 +190,7 @@ di as result "{hline 70}"
 local ++total
 
 * Bump server version
-shell echo '{"registream": "3.0.1", "autolabel": "3.0.1", "datamirror": "1.0.0"}' > "`pkg_versions'"
+shell python3 "`manifest_helper'" "`pkg_versions'" registream=3.0.1 autolabel=3.0.1 datamirror=1.0.0
 
 * Expire cache
 local now = clock("`c(current_date)' `c(current_time)'", "DMY hms")
@@ -214,7 +219,7 @@ di as result "{hline 70}"
 
 local ++total
 
-shell echo '{"registream": "1.0.0", "autolabel": "1.0.0", "datamirror": "1.0.0"}' > "`pkg_versions'"
+shell python3 "`manifest_helper'" "`pkg_versions'" registream=1.0.0 autolabel=1.0.0 datamirror=1.0.0
 
 local now = clock("`c(current_date)' `c(current_time)'", "DMY hms")
 local old = `now' - 90000000
@@ -253,7 +258,7 @@ _rs_config set "`registream_dir'" "latest_version" "`current_version'"
 _rs_config set "`registream_dir'" "telemetry_enabled" "false"
 
 * Bump server (should NOT be detected due to cache)
-shell echo '{"registream": "9.9.9", "autolabel": "9.9.9", "datamirror": "9.9.9"}' > "`pkg_versions'"
+shell python3 "`manifest_helper'" "`pkg_versions'" registream=9.9.9 autolabel=9.9.9 datamirror=9.9.9
 
 
 cap noi _rs_updates send_heartbeat "`registream_dir'" "`current_version'" "test_4" "autolabel" "`autolabel_version'" "" ""
@@ -285,7 +290,7 @@ local now = clock("`c(current_date)' `c(current_time)'", "DMY hms")
 local old = `now' - 90000000
 _rs_config set "`registream_dir'" "last_update_check" "`old'"
 
-shell echo '{"registream": "8.0.0", "autolabel": "3.0.0", "datamirror": "1.0.0"}' > "`pkg_versions'"
+shell python3 "`manifest_helper'" "`pkg_versions'" registream=8.0.0 autolabel=3.0.0 datamirror=1.0.0
 
 
 cap noi _rs_updates send_heartbeat "`registream_dir'" "`current_version'" "test_5" "autolabel" "`autolabel_version'" "" ""
@@ -320,7 +325,7 @@ local now = clock("`c(current_date)' `c(current_time)'", "DMY hms")
 local old = `now' - 90000000
 _rs_config set "`registream_dir'" "last_update_check" "`old'"
 
-shell echo '{"registream": "7.0.0", "autolabel": "7.0.0", "datamirror": "7.0.0"}' > "`pkg_versions'"
+shell python3 "`manifest_helper'" "`pkg_versions'" registream=7.0.0 autolabel=7.0.0 datamirror=7.0.0
 
 
 cap noi _rs_updates send_heartbeat "`registream_dir'" "`current_version'" "test_6" "autolabel" "`autolabel_version'" "" ""
@@ -356,7 +361,7 @@ local now = clock("`c(current_date)' `c(current_time)'", "DMY hms")
 local old = `now' - 90000000
 _rs_config set "`registream_dir'" "last_update_check" "`old'"
 
-shell echo '{"registream": "7.0.0", "autolabel": "7.0.0", "datamirror": "7.0.0"}' > "`pkg_versions'"
+shell python3 "`manifest_helper'" "`pkg_versions'" registream=7.0.0 autolabel=7.0.0 datamirror=7.0.0
 
 
 cap noi _rs_updates send_heartbeat "`registream_dir'" "`current_version'" "test_7" "autolabel" "`autolabel_version'" "" ""
@@ -433,7 +438,7 @@ di as result "{hline 70}"
 
 local ++total
 
-shell echo '{"registream": "5.0.0", "autolabel": "5.0.0", "datamirror": "5.0.0"}' > "`pkg_versions'"
+shell python3 "`manifest_helper'" "`pkg_versions'" registream=5.0.0 autolabel=5.0.0 datamirror=5.0.0
 
 local now = clock("`c(current_date)' `c(current_time)'", "DMY hms")
 local old = `now' - 90000000
@@ -474,7 +479,7 @@ di as result "{hline 70}"
 
 local ++total
 
-shell echo '{"registream": "5.0.0", "autolabel": "5.0.0", "datamirror": "5.0.0"}' > "`pkg_versions'"
+shell python3 "`manifest_helper'" "`pkg_versions'" registream=5.0.0 autolabel=5.0.0 datamirror=5.0.0
 
 local now = clock("`c(current_date)' `c(current_time)'", "DMY hms")
 local old = `now' - 90000000
