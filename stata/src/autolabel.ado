@@ -1,5 +1,5 @@
 *! version {{VERSION}} {{DATE}}
-program define autolabel
+program define autolabel, rclass
     version 16.0
 
 	* Core check: registream must be installed. Each package ships its own
@@ -15,6 +15,7 @@ program define autolabel
 		di as error "  (or from GitHub:)"
 		di as error `"  net install registream, from("https://registream.org/install/stata/registream/latest") replace"'
 		di as error ""
+		return scalar status = 1
 		exit 198
 	}
 
@@ -58,31 +59,43 @@ program define autolabel
 	if ("`first_arg'" == "info") {
 		_autolabel_info `rest'
 		_autolabel_wrapper_end "`REGISTREAM_VERSION'" "`AUTOLABEL_VERSION'" "`registream_dir'" `"`0'"'
+		return local dir "`registream_dir'"
+		return scalar status = 0
 		exit 0
 	}
 	else if ("`first_arg'" == "update") {
 		_autolabel_update `rest'
 		_autolabel_wrapper_end "`REGISTREAM_VERSION'" "`AUTOLABEL_VERSION'" "`registream_dir'" `"`0'"'
+		return local dir "`registream_dir'"
+		return scalar status = 0
 		exit 0
 	}
 	else if ("`first_arg'" == "version") {
 		_autolabel_version `rest'
 		_autolabel_wrapper_end "`REGISTREAM_VERSION'" "`AUTOLABEL_VERSION'" "`registream_dir'" `"`0'"'
+		return local dir "`registream_dir'"
+		return scalar status = 0
 		exit 0
 	}
 	else if ("`first_arg'" == "cite") {
 		_autolabel_cite "`AUTOLABEL_VERSION'" `rest'
 		_autolabel_wrapper_end "`REGISTREAM_VERSION'" "`AUTOLABEL_VERSION'" "`registream_dir'" `"`0'"'
+		return local dir "`registream_dir'"
+		return scalar status = 0
 		exit 0
 	}
 	else if ("`first_arg'" == "scope") {
 		_autolabel_scope "`registream_dir'" `rest'
 		_autolabel_wrapper_end "`REGISTREAM_VERSION'" "`AUTOLABEL_VERSION'" "`registream_dir'" `"`0'"'
+		return local dir "`registream_dir'"
+		return scalar status = 0
 		exit 0
 	}
 	else if ("`first_arg'" == "suggest") {
 		_autolabel_suggest `rest'
 		_autolabel_wrapper_end "`REGISTREAM_VERSION'" "`AUTOLABEL_VERSION'" "`registream_dir'" `"`0'"'
+		return local dir "`registream_dir'"
+		return scalar status = 0
 		exit 0
 	}
 
@@ -110,6 +123,7 @@ program define autolabel
 
     if !inlist("`label_type'", "variables", "values", "lookup") {
         di as error "Invalid first argument `label_type'. Please specify either 'variables', 'values' or 'lookup."
+        return scalar status = 1
         exit 1
     }
 
@@ -140,6 +154,7 @@ program define autolabel
 			}
 
 			if `error_flag' == 1 {
+				return scalar status = 1
 				exit 198
 			}
 
@@ -164,6 +179,7 @@ program define autolabel
 			}
 
 			if `exclude_error' == 1 {
+				return scalar status = 1
 				exit 198
 			}
 
@@ -180,12 +196,14 @@ program define autolabel
     * Ensure domain is specified
     if "`domain'" == "" {
         di as error "Domain not specified. Please specify a domain (e.g., domain(scb))."
+        return scalar status = 1
         exit 1
     }
 
     * Ensure language is specified
     if "`lang'" == "" {
         di as error "Language not specified. Please specify a language (e.g., lang(eng))."
+        return scalar status = 1
         exit 1
     }
 	
@@ -200,8 +218,9 @@ program define autolabel
 			di as error "You have two options:"
 			di as error "  1) ensure that the value is a valid directory path."
 			di as error "  2) unset the global, which will revert to the default registream directory locations "
+			return scalar status = 1
 			exit 1
-		} 
+		}
 		
 		local registream_dir "$registream_dir"
 		
@@ -727,6 +746,7 @@ program define autolabel
 			di as text "Examples:"
 			di as text "  {cmd:autolabel lookup kon kommun, domain(`domain') lang(`lang')}"
 			di as text "  {cmd:autolabel scope LISA, domain(`domain') lang(`lang')}"
+			return scalar status = 1
 			exit 198
 		}
 
@@ -1101,11 +1121,15 @@ program define autolabel
 				di as error "  No matching variables to display."
 				restore
 				_autolabel_wrapper_end "`REGISTREAM_VERSION'" "`AUTOLABEL_VERSION'" "`registream_dir'" `"`0'"'
+				return local dir "`registream_dir'"
+				return scalar status = 0
 				exit 0
 			}
 			restore
 			_autolabel_scope "`registream_dir'" , domain("`domain'") lang("`lang'") var(`_existing_detail')
 			_autolabel_wrapper_end "`REGISTREAM_VERSION'" "`AUTOLABEL_VERSION'" "`registream_dir'" `"`0'"'
+			return local dir "`registream_dir'"
+			return scalar status = 0
 			exit 0
 		}
 
@@ -1132,6 +1156,9 @@ program define autolabel
 	* Runs for ALL autolabel commands
 	* ==========================================================================
 	_autolabel_wrapper_end "`REGISTREAM_VERSION'" "`AUTOLABEL_VERSION'" "`registream_dir'" `"`0'"'
+
+	return local dir "`registream_dir'"
+	return scalar status = 0
 
 end
 
