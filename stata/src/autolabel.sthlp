@@ -165,7 +165,7 @@ quoted strings, one per scope level. For SCB (2-level: Register + Variant):
 {p_end}
 
 {pmore}
-Each quoted token is matched against the corresponding scope level column.
+Each quoted string is matched against the corresponding scope level column.
 Matching priority per level: (1) exact alias match (case-insensitive),
 then (2) name substring match (case-insensitive). For example,
 {cmd:scope("LISA")} matches the alias "LISA"; {cmd:scope("Integration")} matches
@@ -228,17 +228,19 @@ scopes (or coverage entries) instead of the default top-10 view.
 
 {phang}
 {opt dryrun}
-Display the generated labeling commands without executing them. The commands are
-shown exactly as they would be applied, so you can inspect what {cmd:autolabel}
-will do before it modifies your dataset. See
-{help autolabel##deferred:Deferred execution} below.
+Validate the labeling pipeline without applying any changes. {cmd:autolabel}
+parses the metadata, runs the merge, and constructs the labeling commands but
+stops before the apply step. Reports a summary of how many labels would have
+been applied. Combine with {opt savedo()} to write the commands to a do-file
+without applying them. See {help autolabel##deferred:Deferred execution} below.
 {p_end}
 
 {phang}
 {opt savedo(filename)}
-Save the generated labeling commands to a do-file without executing them.
-The saved file is a complete, executable do-file that can be reviewed, edited,
-and run later with {cmd:do}. See {help autolabel##deferred:Deferred execution} below.
+Save the generated labeling commands to an executable do-file. By default
+{opt savedo()} saves and {it:also} applies the labels (so the dataset and the
+saved do-file are consistent); pass {opt dryrun} alongside to save without
+applying. See {help autolabel##deferred:Deferred execution} below.
 {p_end}
 
 
@@ -343,18 +345,24 @@ the foundation of the multi-scope panel workflow in
 {title:Deferred execution}
 
 {pstd}
-{opt dryrun} prints the labeling commands without executing them.
-{opt savedo(filename)} writes them to an executable do-file you can
-review, edit, and {cmd:do} later. Both options apply to
+{opt dryrun} validates the labeling pipeline without applying any
+changes; useful as a no-side-effects check that the metadata covers
+the dataset. {opt savedo(filename)} writes the labeling commands to
+an executable do-file. The two options are orthogonal: {opt savedo}
+saves regardless of {opt dryrun}, and {opt dryrun} suppresses the
+apply step regardless of {opt savedo}. Both options apply to
 {cmd:autolabel variables} and {cmd:autolabel values};
 {cmd:lookup} is always non-destructive.
 {p_end}
 
 {phang2}{cmd:. autolabel variables, domain(scb) lang(eng) dryrun}{p_end}
-{pmore}Preview the commands that would run.{p_end}
+{pmore}Validate without applying.{p_end}
 
 {phang2}{cmd:. autolabel variables, domain(scb) lang(eng) savedo("my_labels.do")}{p_end}
-{pmore}Save for review, then {cmd:do "my_labels.do"} when satisfied.{p_end}
+{pmore}Apply labels and save the commands to a do-file.{p_end}
+
+{phang2}{cmd:. autolabel variables, domain(scb) lang(eng) dryrun savedo("my_labels.do")}{p_end}
+{pmore}Save the commands to a do-file without applying; review or {cmd:do} later.{p_end}
 
 
 {marker results}{...}
@@ -367,7 +375,6 @@ follow-up commands. The shared core (always set) is:
 
 {synoptset 22 tabbed}{...}
 {p2col 5 22 26 2: Scalars}{p_end}
-{synopt:{cmd:r(status)}}0 on success, 1 on error{p_end}
 
 {p2col 5 22 26 2: Macros}{p_end}
 {synopt:{cmd:r(dir)}}resolved metadata directory for the active domain{p_end}
@@ -388,7 +395,7 @@ follow-up commands. The shared core (always set) is:
 
 {p2col 5 22 26 2: Macros}{p_end}
 {synopt:{cmd:r(primary)}}primary scope chosen by inference (empty if {opt scope()} pinned){p_end}
-{synopt:{cmd:r(inferred_scope)}}inferred primary scope as a quoted-token list, round-trippable into {cmd:scope()}{p_end}
+{synopt:{cmd:r(inferred_scope)}}inferred primary scope as a list of quoted strings, in the form {cmd:scope()} accepts{p_end}
 {synopt:{cmd:r(primary_vars)}}space-separated list, variables labeled from primary{p_end}
 {synopt:{cmd:r(fallback_vars)}}space-separated list, variables labeled from other scopes{p_end}
 {synopt:{cmd:r(skipped_vars)}}space-separated list, variables not in the catalog{p_end}
@@ -410,7 +417,7 @@ giving the primary scope's coverage as a percentage of {cmd:r(n_total)}. The con
 
 {p2col 5 22 26 2: Macros}{p_end}
 {synopt:{cmd:r(primary)}}primary scope name{p_end}
-{synopt:{cmd:r(inferred_scope)}}inferred primary scope as a quoted-token list, round-trippable into {cmd:scope()}{p_end}
+{synopt:{cmd:r(inferred_scope)}}inferred primary scope as a list of quoted strings, in the form {cmd:scope()} accepts{p_end}
 {synopt:{cmd:r(primary_vars)}}variables that would label from primary{p_end}
 {synopt:{cmd:r(fallback_vars)}}variables that would label via fallback{p_end}
 {synopt:{cmd:r(unmatched_vars)}}variables not in the catalog{p_end}
@@ -579,16 +586,14 @@ labeled variable {cmd:astsni2007_lbl}.
 {title:Institutional metadata}
 
 {pstd}
-Any institution can author metadata for use with {cmd:autolabel}. The
-minimum-viable bundle is two CSV files
-({cmd:{it:domain}_variables_{it:lang}.csv} and
-{cmd:{it:domain}_value_labels_{it:lang}.csv}). Adding
-{cmd:_scope_}, {cmd:_release_sets_}, and {cmd:_manifest_} files enables
-scope-level context and release-version filtering.
+Any institution can author metadata for use with {cmd:autolabel}. A bundle
+is five CSV files ({cmd:variables}, {cmd:value_labels}, {cmd:scope},
+{cmd:release_sets}, {cmd:manifest}, each suffixed by language). The
+{cmd:manifest} declares scope-level names and available languages.
 {p_end}
 
 {pstd}
-Place the files in {cmd:~/.registream/autolabel/{it:domain}/}. No
+Place the files in {cmd:$registream_dir/autolabel/{it:domain}/}. No
 network access is required; files are read directly from disk:
 {p_end}
 

@@ -364,11 +364,7 @@ program define autolabel, rclass
 
 		if "`dryrun'" != "" {
 			di as text ""
-			di as text "Generating variable labeling commands (dry run)..."
-		}
-		else if "`savedo'" != "" {
-			di as text ""
-			di as text "Generating variable labeling commands..."
+			di as text "Validating variable labeling pipeline (dry run; no changes)..."
 		}
 		else {
 			di as text "  Applying variable labels..."
@@ -466,61 +462,57 @@ program define autolabel, rclass
 
 		restore
 
-		* Execute, save, or display the generated do-file
-		if "`dryrun'" == "" & "`savedo'" == "" {
+		* Apply gate: execute the labeling unless dryrun is set.
+		* Save gate: copy the tempfile to savedo() if requested. The two
+		* gates are orthogonal: any combination is valid.
+		if "`dryrun'" == "" {
 			do `tmpfile'
 		}
-		else if "`savedo'" != "" {
+		if "`savedo'" != "" {
 			copy `tmpfile' "`savedo'", replace
 		}
 		}
 
+		* Headline: applied vs would-be-applied (dryrun).
 		if "`dryrun'" != "" {
-			di as text ""
-			di as result "Generated variable labeling commands (dry run; no labels applied):"
-			di as text "{hline 70}"
-			type `tmpfile'
-			di as text "{hline 70}"
-			di as text ""
-		}
-		else if "`savedo'" != "" {
-			di as text ""
-			di as result "Variable labeling commands saved to: `savedo'"
-			di as text `"  Review with: {stata type "`savedo'"}"'
-			di as text `"  Apply with:  {stata do "`savedo'"}"'
-			di as text ""
+			di as result "  Dry run: `n_labeled_vars'/`n' variable labels would be applied; nothing changed."
 		}
 		else {
 			di as result "  ✓ `n_labeled_vars'/`n' variable labels applied"
-
-			* Provenance breakdown: only in automatic mode (no scope pin).
-			if `"`scope'"' == "" & `"`_inferred_display'"' != "" & `n_labeled_vars' > 0 {
-				if `_has_strong_primary' & `_n_from_primary' > 0 {
-					di as text "    `_n_from_primary' from {result:`_inferred_compact'} (primary)"
-				}
-				if `_n_from_fallback' > 0 {
-					local _fallback_word = lower("`l1_title'") + "s"
-					di as text "    `_n_from_fallback' from other `_fallback_word' ({help autolabel##rules:majority fallback})"
-				}
-			}
-
-			if `n_skipped_vars' > 0 {
-				* Inline skipped list: comma-separated, truncated
-				local _skipped_inline ""
-				local _shown 0
-				foreach _v of local skipped_vars_list {
-					if `_shown' >= 4 continue, break
-					if `_shown' == 0 local _skipped_inline "`_v'"
-					else local _skipped_inline "`_skipped_inline', `_v'"
-					local _shown = `_shown' + 1
-				}
-				if `n_skipped_vars' > 4 {
-					local _skipped_inline "`_skipped_inline', +`=`n_skipped_vars' - 4' more"
-				}
-				di as text "    `n_skipped_vars' skipped, not in {result:`domain'} metadata: {it:`_skipped_inline'}"
-			}
-			di as text ""
 		}
+
+		* Provenance breakdown: only in automatic mode (no scope pin).
+		if `"`scope'"' == "" & `"`_inferred_display'"' != "" & `n_labeled_vars' > 0 {
+			if `_has_strong_primary' & `_n_from_primary' > 0 {
+				di as text "    `_n_from_primary' from {result:`_inferred_compact'} (primary)"
+			}
+			if `_n_from_fallback' > 0 {
+				local _fallback_word = lower("`l1_title'") + "s"
+				di as text "    `_n_from_fallback' from other `_fallback_word' ({help autolabel##rules:majority fallback})"
+			}
+		}
+
+		if `n_skipped_vars' > 0 {
+			* Inline skipped list: comma-separated, truncated
+			local _skipped_inline ""
+			local _shown 0
+			foreach _v of local skipped_vars_list {
+				if `_shown' >= 4 continue, break
+				if `_shown' == 0 local _skipped_inline "`_v'"
+				else local _skipped_inline "`_skipped_inline', `_v'"
+				local _shown = `_shown' + 1
+			}
+			if `n_skipped_vars' > 4 {
+				local _skipped_inline "`_skipped_inline', +`=`n_skipped_vars' - 4' more"
+			}
+			di as text "    `n_skipped_vars' skipped, not in {result:`domain'} metadata: {it:`_skipped_inline'}"
+		}
+
+		* Save confirmation, regardless of apply.
+		if "`savedo'" != "" {
+			di as text `"    labeling commands saved to {result:`savedo'} ({stata doedit "`savedo'":review} | {stata do "`savedo'":apply})"'
+		}
+		di as text ""
 
 		* Display update message if available (AFTER applying labels)
 		_al_utils show_updates "`var_status'" "`var_key'" "`var_current'" "`var_latest'" "" "" "" ""
@@ -552,7 +544,13 @@ program define autolabel, rclass
 		
 
 
-        di as text "  Applying value labels..."
+        if "`dryrun'" != "" {
+            di as text ""
+            di as text "Validating value-labeling pipeline (dry run; no changes)..."
+        }
+        else {
+            di as text "  Applying value labels..."
+        }
 
 		quietly {
 
@@ -725,50 +723,42 @@ program define autolabel, rclass
 
 		restore
 
-		* Execute, save, or display the generated do-file
-		if "`dryrun'" == "" & "`savedo'" == "" {
+		* Apply gate / save gate (orthogonal): see variables branch above.
+		if "`dryrun'" == "" {
 			do `tmpfile'
 		}
-		else if "`savedo'" != "" {
+		if "`savedo'" != "" {
 			copy `tmpfile' "`savedo'", replace
 		}
 		}
 
 		if "`dryrun'" != "" {
-			di as text ""
-			di as result "Generated value labeling commands (dry run; no labels applied):"
-			di as text "{hline 70}"
-			type `tmpfile'
-			di as text "{hline 70}"
-			di as text ""
-		}
-		else if "`savedo'" != "" {
-			di as text ""
-			di as result "Value labeling commands saved to: `savedo'"
-			di as text `"  Review with: {stata type "`savedo'"}"'
-			di as text `"  Apply with:  {stata do "`savedo'"}"'
-			di as text ""
+			di as result "  Dry run: `n_val_labeled'/`n_cat' value labels would be applied; nothing changed."
 		}
 		else {
 			di as result "  ✓ `n_val_labeled'/`n_cat' value labels applied"
-
-			if `n_val_skipped' > 0 {
-				* Inline skipped list
-				local _skipped_inline ""
-				local _shown 0
-				foreach _v of local val_skipped_list {
-					if `_shown' >= 4 continue, break
-					if `_shown' == 0 local _skipped_inline "`_v'"
-					else local _skipped_inline "`_skipped_inline', `_v'"
-					local _shown = `_shown' + 1
-				}
-				if `n_val_skipped' > 4 {
-					local _skipped_inline "`_skipped_inline', +`=`n_val_skipped' - 4' more"
-				}
-				di as text "    `n_val_skipped' skipped, no value labels in {result:`domain'}: {it:`_skipped_inline'}"
-			}
-			di as text ""
 		}
+
+		if `n_val_skipped' > 0 {
+			* Inline skipped list
+			local _skipped_inline ""
+			local _shown 0
+			foreach _v of local val_skipped_list {
+				if `_shown' >= 4 continue, break
+				if `_shown' == 0 local _skipped_inline "`_v'"
+				else local _skipped_inline "`_skipped_inline', `_v'"
+				local _shown = `_shown' + 1
+			}
+			if `n_val_skipped' > 4 {
+				local _skipped_inline "`_skipped_inline', +`=`n_val_skipped' - 4' more"
+			}
+			di as text "    `n_val_skipped' skipped, no value labels in {result:`domain'}: {it:`_skipped_inline'}"
+		}
+
+		if "`savedo'" != "" {
+			di as text `"    labeling commands saved to {result:`savedo'} ({stata doedit "`savedo'":review} | {stata do "`savedo'":apply})"'
+		}
+		di as text ""
 
 		* Display consolidated update message (AFTER applying labels)
 		_al_utils show_updates "`var_status'" "`var_key'" "`var_current'" "`var_latest'" ///

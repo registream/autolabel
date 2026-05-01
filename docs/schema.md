@@ -39,14 +39,17 @@ Every variable's identity is defined by two axes:
 
 **Scope depth is dynamic** — declared per domain in the manifest. SCB uses 2 levels ("Register" / "Variant"); SSB uses 2 differently-named levels ("Source" / "Group"); a future agency could use 4. `autolabel` reads the manifest at runtime to drive UI labels and browse hierarchy — no code changes needed to support a new depth.
 
-### Core vs. augmentation files
+### The five files
 
-The five files split into two tiers:
+A complete domain is five CSV files, each with a fixed role:
 
-- **Core (required)**: `variables.csv` + `value_labels.csv`. A consumer can label every variable from these two files alone, using a majority-label rule to resolve ambiguity when a variable appears in multiple scopes.
-- **Augmentation (recommended)**: `scope.csv` + `release_sets.csv` + `manifest.csv`. The precision layer — enables scope/release filtering and browse hierarchy instead of majority-label fallback.
+- `variables.csv` — variable-level metadata (name, description, value-label group, release-set link)
+- `value_labels.csv` — value labels for coded variables
+- `scope.csv` — the catalog hierarchy (registers, variants, or equivalent levels)
+- `release_sets.csv` — junction linking scope rows to per-release variable definitions
+- `manifest.csv` — display titles for scope levels and the list of available languages
 
-A conformant consumer MUST work with just the core files (graceful degradation). A conformant producer SHOULD emit all five for full precision, but MAY emit only core files for simple single-scope single-release domains. When augmentation is absent, `release_set_id` is omitted from `variables.csv` and the consumer falls through to majority-label collapse.
+The `release_set_id` column on `variables.csv` is the foreign key into `release_sets.csv`; every metadata row is tagged with a release set, even for single-scope single-release domains (use a single scope row and a single release_set in that case).
 
 ---
 
