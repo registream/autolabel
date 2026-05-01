@@ -124,7 +124,7 @@ local tests_failed = 0
 
 * Test 1: Basic Workflow
 di as result "============================================================"
-di as result "Test 1/10: Basic Workflow (02)"
+di as result "Test 1/11: Basic Workflow (02)"
 di as result "============================================================"
 local ++tests_total
 cap noi do "$TEST_DIR/dofiles/02_basic_workflow.do"
@@ -140,7 +140,7 @@ else {
 * Test 2: Verification Scenarios
 di as result ""
 di as result "============================================================"
-di as result "Test 2/10: Verification Scenarios (03)"
+di as result "Test 2/11: Verification Scenarios (03)"
 di as result "============================================================"
 local ++tests_total
 cap noi do "$TEST_DIR/dofiles/03_verification_scenarios.do"
@@ -156,7 +156,7 @@ else {
 * Test 3: Caching
 di as result ""
 di as result "============================================================"
-di as result "Test 3/10: 24-Hour Timestamp Caching (04)"
+di as result "Test 3/11: 24-Hour Timestamp Caching (04)"
 di as result "============================================================"
 local ++tests_total
 cap noi do "$TEST_DIR/dofiles/04_caching.do"
@@ -172,7 +172,7 @@ else {
 * Test 4: Offline Mode
 di as result ""
 di as result "============================================================"
-di as result "Test 4/10: Online vs Offline Validation (05)"
+di as result "Test 4/11: Online vs Offline Validation (05)"
 di as result "============================================================"
 local ++tests_total
 cap noi do "$TEST_DIR/dofiles/05_offline_mode.do"
@@ -188,7 +188,7 @@ else {
 * Test 5: Dataset Updates
 di as result ""
 di as result "============================================================"
-di as result "Test 5/10: Dataset Update Checks (16)"
+di as result "Test 5/11: Dataset Update Checks (16)"
 di as result "============================================================"
 local ++tests_total
 cap noi do "$TEST_DIR/dofiles/16_dataset_updates_test.do"
@@ -204,7 +204,7 @@ else {
 * Test 6: Scope drill (depth-agnostic, SCB depth=2)
 di as result ""
 di as result "============================================================"
-di as result "Test 6/10: Scope drill (20)"
+di as result "Test 6/11: Scope drill (20)"
 di as result "============================================================"
 local ++tests_total
 cap noi do "$TEST_DIR/dofiles/20_scope_drill.do"
@@ -220,7 +220,7 @@ else {
 * Test 7: Comprehensive
 di as result ""
 di as result "============================================================"
-di as result "Test 7/10: Comprehensive Suite (22)"
+di as result "Test 7/11: Comprehensive Suite (22)"
 di as result "============================================================"
 local ++tests_total
 cap noi do "$TEST_DIR/dofiles/22_comprehensive.do"
@@ -236,7 +236,7 @@ else {
 * Test 8: Depth-agnostic (DST depth=1)
 di as result ""
 di as result "============================================================"
-di as result "Test 8/10: Depth-agnostic (25)"
+di as result "Test 8/11: Depth-agnostic (25)"
 di as result "============================================================"
 local ++tests_total
 cap noi do "$TEST_DIR/dofiles/25_depth_agnostic.do"
@@ -252,7 +252,7 @@ else {
 * Test 9: Update & Notification System
 di as result ""
 di as result "============================================================"
-di as result "Test 9/10: Update & Notification System (30)"
+di as result "Test 9/11: Update & Notification System (30)"
 di as result "============================================================"
 local ++tests_total
 cap noi do "$TEST_DIR/dofiles/30_update_notification.do"
@@ -265,13 +265,13 @@ else {
 	di as error "[FAIL] Test 9 (rc=`=_rc')"
 }
 
-* Test 10: Cleanup
+* Test 10: rclass returns across subcommands
 di as result ""
 di as result "============================================================"
-di as result "Test 10/10: Clean State Restoration (99)"
+di as result "Test 10/11: rclass returns (26)"
 di as result "============================================================"
 local ++tests_total
-cap noi do "$TEST_DIR/dofiles/99_cleanup.do"
+cap noi do "$TEST_DIR/dofiles/26_rclass_returns.do"
 if (_rc == 0) {
 	local ++tests_passed
 	di as result "[PASS] Test 10"
@@ -279,6 +279,22 @@ if (_rc == 0) {
 else {
 	local ++tests_failed
 	di as error "[FAIL] Test 10 (rc=`=_rc')"
+}
+
+* Test 11: Cleanup
+di as result ""
+di as result "============================================================"
+di as result "Test 11/11: Clean State Restoration (99)"
+di as result "============================================================"
+local ++tests_total
+cap noi do "$TEST_DIR/dofiles/99_cleanup.do"
+if (_rc == 0) {
+	local ++tests_passed
+	di as result "[PASS] Test 11"
+}
+else {
+	local ++tests_failed
+	di as error "[FAIL] Test 11 (rc=`=_rc')"
 }
 
 *==============================================================================

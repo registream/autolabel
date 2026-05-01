@@ -35,13 +35,13 @@ Part of the {help registream:RegiStream} ecosystem for register data research.
 
 {p 8 15 2}
 {cmd:autolabel variables} [{it:varlist}] {cmd:,} {opth domain(string)} {opth lang(string)}
-[{opth scope(string)} {opth release(string)}
+[{opth scope(string asis)} {opth release(string)}
 {opth exclude(varlist)} {opth suffix(string)} {opt dryrun} {opth savedo(filename)}]
 {p_end}
 
 {p 8 15 2}
 {cmd:autolabel values} [{it:varlist}] {cmd:,} {opth domain(string)} {opth lang(string)}
-[{opth scope(string)} {opth release(string)}
+[{opth scope(string asis)} {opth release(string)}
 {opth exclude(varlist)} {opth suffix(string)} {opt dryrun} {opth savedo(filename)}]
 {p_end}
 
@@ -51,17 +51,17 @@ Part of the {help registream:RegiStream} ecosystem for register data research.
 
 {p 8 15 2}
 {cmd:autolabel lookup} {it:varlist} {cmd:,} {opth domain(string)} {opth lang(string)}
-[{opth scope(string)} {opt detail}]
+[{opth scope(string asis)} {opt detail}]
 {p_end}
 
 {p 8 15 2}
 {cmd:autolabel scope} [{it:search}] {cmd:,} [{opth domain(string)} {opth lang(string)}
-{opth scope(string)} {opt list}]
+{opth scope(string asis)} {opt list}]
 {p_end}
 
 {p 8 15 2}
 {cmd:autolabel suggest} {cmd:,} {opth domain(string)} {opth lang(string)}
-[{opth scope(string)} {opt list}]
+[{opth scope(string asis)} {opt list}]
 {p_end}
 
 {pstd}
@@ -154,7 +154,7 @@ For {cmd:scb}: {cmd:eng} (English) or {cmd:swe} (Swedish).
 {dlgtab:Filtering}
 
 {phang}
-{opt scope(string)}
+{opt scope(string asis)}
 Filter metadata to a specific scope within the domain. Pass one or more
 quoted strings, one per scope level. For SCB (2-level: Register + Variant):
 {p_end}
@@ -220,8 +220,8 @@ stays focused on the variable as they navigate. Drop the filter by re-running
 
 {phang}
 {opt list}
-For {cmd:autolabel scope} only. Show all scopes instead of the default
-limit of 10. Without {opt list}, only the first 10 matching scopes are shown.
+For {cmd:autolabel scope} and {cmd:autolabel suggest}. Show all matching
+scopes (or coverage entries) instead of the default top-10 view.
 {p_end}
 
 {dlgtab:Deferred execution}
@@ -313,7 +313,7 @@ applying anything. Recommended first step for mixed-panel workflows.
 
 {p 8 15 2}
 {cmd:autolabel suggest} {cmd:,} {opth domain(string)} {opth lang(string)}
-[{opth scope(string)} {opt list}]
+[{opth scope(string asis)} {opt list}]
 {p_end}
 
 {dlgtab:Top-level view}
@@ -361,15 +361,90 @@ review, edit, and {cmd:do} later. Both options apply to
 {title:Stored results}
 
 {pstd}
-{cmd:autolabel} stores the following in {cmd:r()}:
+Every {cmd:autolabel} subcommand sets {cmd:r()} so callers can inspect or compose
+follow-up commands. The shared core (always set) is:
 {p_end}
 
-{synoptset 20 tabbed}{...}
-{p2col 5 20 24 2: Scalars}{p_end}
-{synopt:{cmd:r(status)}}0 if successful, 1 if error{p_end}
+{synoptset 22 tabbed}{...}
+{p2col 5 22 26 2: Scalars}{p_end}
+{synopt:{cmd:r(status)}}0 on success, 1 on error{p_end}
 
-{p2col 5 20 24 2: Macros}{p_end}
-{synopt:{cmd:r(dir)}}Directory where metadata files are located{p_end}
+{p2col 5 22 26 2: Macros}{p_end}
+{synopt:{cmd:r(dir)}}resolved metadata directory for the active domain{p_end}
+{synopt:{cmd:r(domain)}}echo of the {opt domain()} argument{p_end}
+{synopt:{cmd:r(lang)}}echo of the {opt lang()} argument{p_end}
+
+{pstd}
+{cmd:autolabel variables} and {cmd:autolabel values} additionally set:
+{p_end}
+
+{synoptset 22 tabbed}{...}
+{p2col 5 22 26 2: Scalars}{p_end}
+{synopt:{cmd:r(n_total)}}total dataset variables walked{p_end}
+{synopt:{cmd:r(n_primary)}}variables labeled from the primary scope{p_end}
+{synopt:{cmd:r(n_fallback)}}variables labeled via majority fallback{p_end}
+{synopt:{cmd:r(n_skipped)}}variables not in the catalog{p_end}
+{synopt:{cmd:r(display_depth)}}depth at which {cmd:r(inferred_scope)} was rendered{p_end}
+
+{p2col 5 22 26 2: Macros}{p_end}
+{synopt:{cmd:r(primary)}}primary scope chosen by inference (empty if {opt scope()} pinned){p_end}
+{synopt:{cmd:r(inferred_scope)}}inferred primary scope as a quoted-token list, round-trippable into {cmd:scope()}{p_end}
+{synopt:{cmd:r(primary_vars)}}space-separated list, variables labeled from primary{p_end}
+{synopt:{cmd:r(fallback_vars)}}space-separated list, variables labeled from other scopes{p_end}
+{synopt:{cmd:r(skipped_vars)}}space-separated list, variables not in the catalog{p_end}
+
+{pstd}
+{cmd:autolabel suggest} sets the same partition as a preview, plus {cmd:r(unmatched_vars)}
+listing dataset variables not matched anywhere in the catalog and {cmd:r(match_pct)}
+giving the primary scope's coverage as a percentage of {cmd:r(n_total)}. The contract is:
+{p_end}
+
+{synoptset 22 tabbed}{...}
+{p2col 5 22 26 2: Scalars}{p_end}
+{synopt:{cmd:r(n_total)}}total dataset variables{p_end}
+{synopt:{cmd:r(n_primary)}}variables in primary scope{p_end}
+{synopt:{cmd:r(n_fallback)}}variables matched via majority fallback{p_end}
+{synopt:{cmd:r(n_unmatched)}}variables not in catalog at all{p_end}
+{synopt:{cmd:r(match_pct)}}primary scope coverage (percent of n_total){p_end}
+{synopt:{cmd:r(display_depth)}}depth at which {cmd:r(inferred_scope)} was rendered{p_end}
+
+{p2col 5 22 26 2: Macros}{p_end}
+{synopt:{cmd:r(primary)}}primary scope name{p_end}
+{synopt:{cmd:r(inferred_scope)}}inferred primary scope as a quoted-token list, round-trippable into {cmd:scope()}{p_end}
+{synopt:{cmd:r(primary_vars)}}variables that would label from primary{p_end}
+{synopt:{cmd:r(fallback_vars)}}variables that would label via fallback{p_end}
+{synopt:{cmd:r(unmatched_vars)}}variables not in the catalog{p_end}
+
+{pstd}
+{cmd:autolabel lookup} sets:
+{p_end}
+
+{synoptset 22 tabbed}{...}
+{p2col 5 22 26 2: Scalars}{p_end}
+{synopt:{cmd:r(n_total)}}variables looked up{p_end}
+{synopt:{cmd:r(n_found)}}variables found in the catalog{p_end}
+{synopt:{cmd:r(n_unmatched)}}variables not found{p_end}
+
+{p2col 5 22 26 2: Macros}{p_end}
+{synopt:{cmd:r(found_vars)}}space-separated list, variables found{p_end}
+{synopt:{cmd:r(unmatched_vars)}}space-separated list, variables not found{p_end}
+
+{pstd}
+{cmd:autolabel scope} sets:
+{p_end}
+
+{synoptset 22 tabbed}{...}
+{p2col 5 22 26 2: Scalars}{p_end}
+{synopt:{cmd:r(scope_level)}}depth of the current navigation (0, 1, 2, ...){p_end}
+
+{p2col 5 22 26 2: Macros}{p_end}
+{synopt:{cmd:r(parent_scope)}}the {opt scope()} token chain in effect, if any{p_end}
+
+{pstd}
+The partition macros enable a composable pattern: run {cmd:autolabel suggest} once,
+then loop or compose follow-up calls without re-running primary inference. See the
+example block below.
+{p_end}
 
 
 {marker examples}{...}
@@ -444,6 +519,17 @@ the filter active.{p_end}
 
 {phang2}{cmd:. autolabel values, domain(scb) lang(eng) savedo("my_value_labels.do")}{p_end}
 {pmore}Save value labeling commands to a do-file for review.{p_end}
+
+{dlgtab:Composing labels via stored returns}
+
+{phang2}{cmd:. autolabel suggest, domain(scb) lang(eng)}{p_end}
+{pmore}Preview which scopes cover which dataset variables.{p_end}
+
+{phang2}{cmd:. autolabel variables `r(primary_vars)', domain(scb) lang(eng) scope("`r(primary)'")}{p_end}
+{pmore}Label the primary-scope variables cleanly with one explicit pin.{p_end}
+
+{phang2}{cmd:. autolabel lookup `r(fallback_vars)', domain(scb) lang(eng)}{p_end}
+{pmore}Inspect fallback variables to decide which scope to pin per group.{p_end}
 
 {dlgtab:Dataset updates}
 

@@ -43,7 +43,7 @@ program define autolabel, rclass
 	* MASTER WRAPPER (START): Usage tracking + Background update check
 	* Runs for ALL autolabel commands
 	* ==========================================================================
-	_autolabel_wrapper_start "`REGISTREAM_VERSION'" "`AUTOLABEL_VERSION'" `"`0'"'
+	_al_wrapper_start "`REGISTREAM_VERSION'" "`AUTOLABEL_VERSION'" `"`0'"'
 	local registream_dir "`r(registream_dir)'"
 
     * Parse first argument to determine command type.
@@ -57,43 +57,49 @@ program define autolabel, rclass
 	* ==========================================================================
 
 	if ("`first_arg'" == "info") {
-		_autolabel_info `rest'
-		_autolabel_wrapper_end "`REGISTREAM_VERSION'" "`AUTOLABEL_VERSION'" "`registream_dir'" `"`0'"'
+		_al_info `rest'
+		_al_wrapper_end "`REGISTREAM_VERSION'" "`AUTOLABEL_VERSION'" "`registream_dir'" `"`0'"'
 		return local dir "`registream_dir'"
 		return scalar status = 0
 		exit 0
 	}
 	else if ("`first_arg'" == "update") {
-		_autolabel_update `rest'
-		_autolabel_wrapper_end "`REGISTREAM_VERSION'" "`AUTOLABEL_VERSION'" "`registream_dir'" `"`0'"'
+		_al_update `rest'
+		_al_wrapper_end "`REGISTREAM_VERSION'" "`AUTOLABEL_VERSION'" "`registream_dir'" `"`0'"'
 		return local dir "`registream_dir'"
 		return scalar status = 0
 		exit 0
 	}
 	else if ("`first_arg'" == "version") {
-		_autolabel_version `rest'
-		_autolabel_wrapper_end "`REGISTREAM_VERSION'" "`AUTOLABEL_VERSION'" "`registream_dir'" `"`0'"'
+		_al_version `rest'
+		_al_wrapper_end "`REGISTREAM_VERSION'" "`AUTOLABEL_VERSION'" "`registream_dir'" `"`0'"'
 		return local dir "`registream_dir'"
 		return scalar status = 0
 		exit 0
 	}
 	else if ("`first_arg'" == "cite") {
-		_autolabel_cite "`AUTOLABEL_VERSION'" `rest'
-		_autolabel_wrapper_end "`REGISTREAM_VERSION'" "`AUTOLABEL_VERSION'" "`registream_dir'" `"`0'"'
+		_al_cite "`AUTOLABEL_VERSION'" `rest'
+		_al_wrapper_end "`REGISTREAM_VERSION'" "`AUTOLABEL_VERSION'" "`registream_dir'" `"`0'"'
 		return local dir "`registream_dir'"
 		return scalar status = 0
 		exit 0
 	}
 	else if ("`first_arg'" == "scope") {
-		_autolabel_scope "`registream_dir'" `rest'
-		_autolabel_wrapper_end "`REGISTREAM_VERSION'" "`AUTOLABEL_VERSION'" "`registream_dir'" `"`0'"'
+		_al_scope "`registream_dir'" `rest'
+		* Propagate the rclass returns from _al_scope into autolabel's return
+		* list so the user sees them after `autolabel scope`.
+		return add
+		_al_wrapper_end "`REGISTREAM_VERSION'" "`AUTOLABEL_VERSION'" "`registream_dir'" `"`0'"'
 		return local dir "`registream_dir'"
 		return scalar status = 0
 		exit 0
 	}
 	else if ("`first_arg'" == "suggest") {
-		_autolabel_suggest `rest'
-		_autolabel_wrapper_end "`REGISTREAM_VERSION'" "`AUTOLABEL_VERSION'" "`registream_dir'" `"`0'"'
+		_al_suggest `rest'
+		* Propagate the rclass returns from _al_suggest into autolabel's return
+		* list so the user sees them after `autolabel suggest`.
+		return add
+		_al_wrapper_end "`REGISTREAM_VERSION'" "`AUTOLABEL_VERSION'" "`registream_dir'" `"`0'"'
 		return local dir "`registream_dir'"
 		return scalar status = 0
 		exit 0
@@ -106,7 +112,7 @@ program define autolabel, rclass
 
 	* Note: scope() tokenization happens inside the helpers that actually
 	* need the parsed levels (_al_filter_scope, _al_collapse_metadata,
-	* _autolabel_scope). The outer `scope' string is passed through
+	* _al_scope). The outer `scope' string is passed through
 	* unchanged via compound quotes.
 
 	* Normalize domain and lang to lowercase immediately (case-insensitive)
@@ -325,11 +331,16 @@ program define autolabel, rclass
 	local var_merge_uncollapsed "`_uncollapsed_var_dta'"
 	local n_ambig_meta = r(n_ambiguous)
 	local pin_hints = r(pin_hints)
-	local _inferred_display = r(inferred_display)
-	local _inferred_compact = r(inferred_compact)
-	if "`_inferred_compact'" == "" local _inferred_compact "`_inferred_display'"
+	* Compound-quote macro substitution preserves embedded quote chars
+	* in the multi-token forms (e.g. `"LISA" "Individuals 16+"').
+	local _inferred_scope   `"`r(inferred_scope)'"'
+	local _inferred_display `"`r(inferred_display)'"'
+	local _inferred_compact `"`r(inferred_compact)'"'
+	if `"`_inferred_compact'"' == "" local _inferred_compact `"`_inferred_display'"'
 	local _match_pct = r(match_pct)
 	local _has_strong_primary = r(has_strong_primary)
+	local _display_depth = r(display_depth)
+	if "`_display_depth'" == "" local _display_depth 0
 	if "`n_ambig_meta'" == "" local n_ambig_meta 0
 	if "`_has_strong_primary'" == "" local _has_strong_primary 0
 	* Per-variable provenance counts are computed inside the variables/values
@@ -396,10 +407,16 @@ program define autolabel, rclass
 				local _n_from_primary = r(N)
 				quietly count if _is_primary == 0 & !missing(var_label) & var_label != ""
 				local _n_from_fallback = r(N)
+
+				* Variable lists per provenance for rclass returns (Phase 1).
+				quietly levelsof variable_original if _is_primary == 1 & !missing(var_label) & var_label != "", local(_primary_vars_list) clean
+				quietly levelsof variable_original if _is_primary == 0 & !missing(var_label) & var_label != "", local(_fallback_vars_list) clean
 			}
 			else {
 				local _n_from_primary = 0
 				local _n_from_fallback = 0
+				local _primary_vars_list ""
+				local _fallback_vars_list ""
 			}
 
 			// Create a tempfile for the .do file
@@ -477,7 +494,7 @@ program define autolabel, rclass
 			di as result "  ✓ `n_labeled_vars'/`n' variable labels applied"
 
 			* Provenance breakdown: only in automatic mode (no scope pin).
-			if `"`scope'"' == "" & "`_inferred_display'" != "" & `n_labeled_vars' > 0 {
+			if `"`scope'"' == "" & `"`_inferred_display'"' != "" & `n_labeled_vars' > 0 {
 				if `_has_strong_primary' & `_n_from_primary' > 0 {
 					di as text "    `_n_from_primary' from {result:`_inferred_compact'} (primary)"
 				}
@@ -507,6 +524,22 @@ program define autolabel, rclass
 
 		* Display update message if available (AFTER applying labels)
 		_al_utils show_updates "`var_status'" "`var_key'" "`var_current'" "`var_latest'" "" "" "" ""
+
+		* rclass returns: variable subcommand (Phase 1).
+		* Surface the per-variable provenance partition so callers can compose
+		* iterative scope-pinned labeling without re-running primary inference.
+		return local primary        `"`_inferred_compact'"'
+		return local inferred_scope `"`_inferred_scope'"'
+		return local primary_vars   `"`_primary_vars_list'"'
+		return local fallback_vars  `"`_fallback_vars_list'"'
+		return local skipped_vars   `"`skipped_vars_list'"'
+		return scalar n_primary     = `_n_from_primary'
+		return scalar n_fallback    = `_n_from_fallback'
+		return scalar n_skipped     = `n_skipped_vars'
+		return scalar n_total       = `n'
+		return scalar display_depth = `_display_depth'
+		return local domain         `"`domain'"'
+		return local lang           `"`lang'"'
 
     }
 
@@ -547,10 +580,16 @@ program define autolabel, rclass
 				local _n_from_primary = r(N)
 				quietly count if _is_primary == 0 & !missing(value_labels_stata) & value_labels_stata != ""
 				local _n_from_fallback = r(N)
+
+				* Variable lists per provenance for rclass returns (Phase 1).
+				quietly levelsof variable_original if _is_primary == 1 & !missing(value_labels_stata) & value_labels_stata != "", local(_primary_vars_list) clean
+				quietly levelsof variable_original if _is_primary == 0 & !missing(value_labels_stata) & value_labels_stata != "", local(_fallback_vars_list) clean
 			}
 			else {
 				local _n_from_primary = 0
 				local _n_from_fallback = 0
+				local _primary_vars_list ""
+				local _fallback_vars_list ""
 			}
 
 
@@ -735,6 +774,20 @@ program define autolabel, rclass
 		_al_utils show_updates "`var_status'" "`var_key'" "`var_current'" "`var_latest'" ///
 										  "`val_status'" "`val_key'" "`val_current'" "`val_latest'"
 
+		* rclass returns: values subcommand (Phase 1).
+		return local primary        `"`_inferred_compact'"'
+		return local inferred_scope `"`_inferred_scope'"'
+		return local primary_vars   `"`_primary_vars_list'"'
+		return local fallback_vars  `"`_fallback_vars_list'"'
+		return local skipped_vars   `"`val_skipped_list'"'
+		return scalar n_primary     = `_n_from_primary'
+		return scalar n_fallback    = `_n_from_fallback'
+		return scalar n_skipped     = `n_val_skipped'
+		return scalar n_total       = `n'
+		return scalar display_depth = `_display_depth'
+		return local domain         `"`domain'"'
+		return local lang           `"`lang'"'
+
     }
 
 	else if "`label_type'" == "lookup" {
@@ -831,7 +884,22 @@ program define autolabel, rclass
 		* Initialize a local to store missing variables
 		local missing_vars ""
 
+		* Capture found/unmatched variable lists for rclass returns (Phase 1).
+		* Done here (inside the quietly + post-merge) so the partition reflects
+		* the merge state regardless of which display path runs below.
+		quietly levelsof variable_name if _merge == 2, local(_lookup_unmatched_vars) clean
+		quietly levelsof variable_name if _merge == 3, local(_lookup_found_vars) clean
+
 		}
+
+		* rclass returns: lookup subcommand (Phase 1).
+		return local found_vars     `"`_lookup_found_vars'"'
+		return local unmatched_vars `"`_lookup_unmatched_vars'"'
+		return scalar n_found       = `: word count `_lookup_found_vars''
+		return scalar n_unmatched   = `: word count `_lookup_unmatched_vars''
+		return scalar n_total       = `: word count `varlist''
+		return local domain         `"`domain'"'
+		return local lang           `"`lang'"'
 
 		* ─────────────────────────────────────────────────────────────
 		* DISPLAY RESULTS
@@ -1120,14 +1188,17 @@ program define autolabel, rclass
 			if `"`_existing_detail'"' == "" {
 				di as error "  No matching variables to display."
 				restore
-				_autolabel_wrapper_end "`REGISTREAM_VERSION'" "`AUTOLABEL_VERSION'" "`registream_dir'" `"`0'"'
+				_al_wrapper_end "`REGISTREAM_VERSION'" "`AUTOLABEL_VERSION'" "`registream_dir'" `"`0'"'
 				return local dir "`registream_dir'"
 				return scalar status = 0
 				exit 0
 			}
 			restore
-			_autolabel_scope "`registream_dir'" , domain("`domain'") lang("`lang'") var(`_existing_detail')
-			_autolabel_wrapper_end "`REGISTREAM_VERSION'" "`AUTOLABEL_VERSION'" "`registream_dir'" `"`0'"'
+			_al_scope "`registream_dir'" , domain("`domain'") lang("`lang'") var(`_existing_detail')
+			* Propagate _al_scope's rclass returns through autolabel's list
+			* (lookup-level returns set above stay in autolabel's accumulated list).
+			return add
+			_al_wrapper_end "`REGISTREAM_VERSION'" "`AUTOLABEL_VERSION'" "`registream_dir'" `"`0'"'
 			return local dir "`registream_dir'"
 			return scalar status = 0
 			exit 0
@@ -1155,19 +1226,29 @@ program define autolabel, rclass
 	* MASTER WRAPPER (END): Async telemetry + update check + notification
 	* Runs for ALL autolabel commands
 	* ==========================================================================
-	_autolabel_wrapper_end "`REGISTREAM_VERSION'" "`AUTOLABEL_VERSION'" "`registream_dir'" `"`0'"'
+	_al_wrapper_end "`REGISTREAM_VERSION'" "`AUTOLABEL_VERSION'" "`registream_dir'" `"`0'"'
 
 	return local dir "`registream_dir'"
 	return scalar status = 0
 
 end
 
+* #############################################################################
+* #                                                                           #
+* #  SUBCOMMAND HANDLERS (private programs invoked by the dispatcher above)   #
+* #                                                                           #
+* #  Naming convention: all private programs use the _al_* prefix.            #
+* #  Section ordering: master wrappers, aliases, scope, suggest.              #
+* #                                                                           #
+* #############################################################################
+
+
 * =============================================================================
 * MASTER WRAPPER FUNCTIONS
 * =============================================================================
 
 * Wrapper start: Initialize everything + log usage + background check
-program define _autolabel_wrapper_start, rclass
+program define _al_wrapper_start, rclass
 	* Use gettoken (handles compound quotes) so command_line can contain
 	* inner quotes from scope("...") without truncation.
 	gettoken current_version 0 : 0
@@ -1197,7 +1278,7 @@ program define _autolabel_wrapper_start, rclass
 end
 
 * Wrapper end: Consolidated heartbeat (telemetry + update check) + notification
-program define _autolabel_wrapper_end
+program define _al_wrapper_end
 	* gettoken preserves inner quotes in command_line
 	gettoken current_version 0 : 0
 	gettoken autolabel_version 0 : 0
@@ -1259,7 +1340,7 @@ program define _autolabel_wrapper_end
 end
 
 * Subcommand: autolabel info
-program define _autolabel_info
+program define _al_info
 	* Get version from helper function
 	_rs_utils get_version
 	local REGISTREAM_VERSION "`r(version)'"
@@ -1319,7 +1400,7 @@ end
 * =============================================================================
 
 * Subcommand: autolabel update [datasets]
-program define _autolabel_update
+program define _al_update
 	* Parse what to update
 	gettoken what rest : 0, parse(" ,")
 
@@ -1360,13 +1441,13 @@ end
 
 * Subcommand: autolabel version
 * Alias that delegates to registream version
-program define _autolabel_version
+program define _al_version
 	registream version
 end
 
 * Subcommand: autolabel cite
 * Alias that delegates to registream cite
-program define _autolabel_cite
+program define _al_cite
 	version 16.0
 
 	* Caller passes the stamped autolabel version as the first positional
@@ -1404,7 +1485,7 @@ end
 *   BLOCK 2: n_tokens == scope_depth     → browse releases
 *   BLOCK 3: n_tokens == scope_depth+1   → show variables (last token = release)
 
-program define _autolabel_scope
+program define _al_scope, rclass
 	local q = char(34)
 
 	gettoken registream_dir 0 : 0
@@ -1805,7 +1886,7 @@ program define _autolabel_scope
 			* Quotes/backticks break macro expansion; parentheses are SMCL-safe.
 			* Colons are the SMCL command:label separator, so a literal `:` in the
 			* command part poisons the dispatch. Encode `:` as U+2236 RATIO (`∶`,
-			* visually identical), and decode it back to `:` at _autolabel_scope's
+			* visually identical), and decode it back to `:` at _al_scope's
 			* entry before the match ladder runs. The old `:` -> ` -` mapping was
 			* irreversible: receivers couldn't distinguish encoded colons from
 			* literal " - " sequences in other names, so click targets like
@@ -2112,6 +2193,12 @@ program define _autolabel_scope
 		}
 
 	restore
+
+	* rclass returns: scope subcommand (Phase 1).
+	return local domain      `"`domain'"'
+	return local lang        `"`lang'"'
+	return scalar scope_level = `n_tokens'
+	return local parent_scope `"`scope'"'
 end
 
 
@@ -2160,10 +2247,10 @@ end
 * Pre-v3 legacy bundles (register column) are not supported here.
 * =============================================================================
 
-program define _autolabel_suggest
+program define _al_suggest, rclass
 	syntax , DOMAIN(string) LANG(string) [SCOPE(string asis) LIST]
 
-	* Literal double-quote for click URLs (same trick as _autolabel_scope)
+	* Literal double-quote for click URLs (same trick as _al_scope)
 	local q = char(34)
 
 	local domain = lower("`domain'")
@@ -2202,10 +2289,13 @@ program define _autolabel_suggest
 	tempfile _collapsed
 	_al_collapse_metadata, dta("`var_dta'") output("`_collapsed'") ///
 		datavars("`_datavars'") scope(`scope') quiet
-	local _primary_display = r(inferred_display)
-	local _primary_compact = r(inferred_compact)
+	local _primary_scope   `"`r(inferred_scope)'"'
+	local _primary_display `"`r(inferred_display)'"'
+	local _primary_compact `"`r(inferred_compact)'"'
 	local _match_pct = r(match_pct)
 	local _has_strong_primary = r(has_strong_primary)
+	local _display_depth = r(display_depth)
+	if "`_display_depth'" == "" local _display_depth 0
 	if "`_has_strong_primary'" == "" local _has_strong_primary 0
 
 	* Build the user-varlist tempfile BEFORE preserve, using postfile so we
@@ -2233,19 +2323,29 @@ program define _autolabel_suggest
 			exit 111
 		}
 
-		local _keep_cols "variable_name variable_label scope_level_1"
+		* Keep _is_primary so we can partition matched user vars into
+		* primary vs fallback for the rclass returns below.
+		local _keep_cols "variable_name variable_label scope_level_1 _is_primary"
 		cap confirm variable scope_level_1_alias
 		if (_rc == 0) local _keep_cols "`_keep_cols' scope_level_1_alias"
 
 		quietly keep `_keep_cols'
 
-		quietly merge 1:1 variable_name using `_users', keep(1 3)
+		quietly merge 1:1 variable_name using `_users', keep(2 3)
 		* _merge==3 → user var with a metadata row (would be labeled)
-		* _merge==1 → metadata var not in user dataset (ignore)
+		* _merge==2 → user var not in metadata (unmatched)
 
 		quietly count if _merge == 3
 		local _n_matched = r(N)
 		local _n_unmatched = `_n_datavars' - `_n_matched'
+
+		* Capture variable lists per provenance for rclass returns (Phase 1):
+		* primary = matched + _is_primary==1 (would label from primary scope)
+		* fallback = matched + _is_primary==0 (would label via majority fallback)
+		* unmatched = user var not in catalog at all
+		quietly levelsof variable_name if _merge == 3 & _is_primary == 1, local(_suggest_primary_vars) clean
+		quietly levelsof variable_name if _merge == 3 & _is_primary == 0, local(_suggest_fallback_vars) clean
+		quietly levelsof variable_name if _merge == 2, local(_suggest_unmatched_vars) clean
 
 		quietly keep if _merge == 3
 		quietly drop _merge
@@ -2411,7 +2511,34 @@ program define _autolabel_suggest
 		}
 
 	restore
+
+	* rclass returns: suggest subcommand (Phase 1).
+	* Surface the primary / fallback / unmatched partition so the user can
+	* compose iterative scope-pinned labeling without re-running inference.
+	return local primary        `"`_primary_compact'"'
+	return local inferred_scope `"`_primary_scope'"'
+	return local primary_vars   `"`_suggest_primary_vars'"'
+	return local fallback_vars  `"`_suggest_fallback_vars'"'
+	return local unmatched_vars `"`_suggest_unmatched_vars'"'
+	return scalar n_primary     = `: word count `_suggest_primary_vars''
+	return scalar n_fallback    = `: word count `_suggest_fallback_vars''
+	return scalar n_unmatched   = `: word count `_suggest_unmatched_vars''
+	return scalar n_total       = `_n_datavars'
+	return scalar match_pct     = `_match_pct'
+	return scalar display_depth = `_display_depth'
+	return local domain         `"`domain'"'
+	return local lang           `"`lang'"'
 end
+
+
+* #############################################################################
+* #                                                                           #
+* #  INTERNAL HELPERS (called by handlers above; not user-facing)             #
+* #                                                                           #
+* #  Naming convention: all private programs use the _al_* prefix.            #
+* #  These are pure building blocks: collapse, manifest, filter, parse, etc.  #
+* #                                                                           #
+* #############################################################################
 
 
 * =============================================================================
@@ -2437,13 +2564,21 @@ end
 *   r(merge_dta)          - path to the collapsed DTA (same as output)
 *   r(n_ambiguous)        - # variables with >1 distinct labels before collapse
 *   r(pin_hints)          - filters that would further disambiguate
-*   r(inferred_register)  - display name of inferred primary scope
-*   r(inferred_display)   - ditto (kept for caller compat)
-*   r(inferred_compact)   - compact form (alias if available, else name)
+*   r(inferred_scope)     - inferred primary scope as a quoted-token list,
+*                           rendered down to the deepest level where narrowing
+*                           reduces matched-variable coverage. Round-trips
+*                           into scope() via `scope(`r(inferred_scope)')'.
+*                           Single-level example: `"LISA"'.
+*                           Multi-level example: `"LISA" "Individuals 16+"'.
+*   r(inferred_display)   - banner-formatted display string (may include an
+*                           italic full-name aside at depth 1)
+*   r(inferred_compact)   - level-1 alias only; stable single-token form for
+*                           iterative pinning via scope("`r(primary)'")
 *   r(match_pct)          - % of datavars covered by the primary scope
 *   r(primary_matches)    - # datavars covered by the primary scope
 *   r(n_datavars)         - total # of datavars passed to inference
 *   r(has_strong_primary) - 1 if the primary covers >=10% of datavars
+*   r(display_depth)      - depth at which inferred_scope was rendered
 * =============================================================================
 program define _al_collapse_metadata, rclass
 	syntax, dta(string) output(string) [scope(string asis) release(string) datavars(string) uncollapsed(string) QUIet]
@@ -2653,37 +2788,99 @@ program define _al_collapse_v2, rclass
 
 			if (`max_matches' > 0) {
 				gsort -_scope_matches `_scope_group'
-				* Capture inferred scope values at each level
+				* Capture inferred scope values + per-level aliases from
+				* the winning row BEFORE the matched-count loop below
+				* (which uses bysort and would reorder rows).
 				forval _i = 1/`scope_depth' {
 					local _inferred_`_i' = scope_level_`_i'[1]
+					local _alias_`_i' ""
+					cap local _alias_`_i' = scope_level_`_i'_alias[1]
+					if ("`_alias_`_i''" == ".") local _alias_`_i' ""
+				}
+				local _alias1 "`_alias_1'"
+
+				* ─────────────────────────────────────────────────────────
+				* Determine deepest meaningful display level. Walk from
+				* level 1 down: at each step, count distinct matched
+				* variables that have at least one row in the partial
+				* lineage (_inferred_1...._inferred_i). Stop at the first
+				* level where narrowing no longer drops variables (or
+				* where _inferred_i is empty). The deepest level where
+				* narrowing was informative becomes _display_depth.
+				* ─────────────────────────────────────────────────────────
+				quietly bysort variable_name: gen byte _vfirst = (_n == 1)
+				forval _i = 1/`scope_depth' {
+					quietly gen byte _ml_`_i' = _in_dataset
+					forval _j = 1/`_i' {
+						quietly replace _ml_`_i' = 0 if scope_level_`_j' != "`_inferred_`_j''"
+					}
+					quietly bysort variable_name: egen byte _hl_`_i' = max(_ml_`_i')
+					quietly count if _hl_`_i' == 1 & _vfirst == 1
+					local _matched_at_`_i' = r(N)
 				}
 
-				* Compact display: alias-first when available, else truncated name
-				local _alias1 ""
-				cap local _alias1 = scope_level_1_alias[1]
-				if ("`_alias1'" != "" & "`_alias1'" != ".") {
-					* alias + truncated full name if different
+				local _display_depth 1
+				forval _i = 2/`scope_depth' {
+					if "`_inferred_`_i''" == "" continue, break
+					local _prev = `_i' - 1
+					if (`_matched_at_`_i'' < `_matched_at_`_prev'') {
+						local _display_depth = `_i'
+					}
+					else continue, break
+				}
+
+				cap drop _vfirst
+				forval _i = 1/`scope_depth' {
+					cap drop _ml_`_i' _hl_`_i'
+				}
+
+				* ─────────────────────────────────────────────────────────
+				* Build the inferred-scope string in quoted-list form, e.g.
+				* `"LISA"' for depth 1 or `"LISA" "Individuals 16+"' for
+				* depth 2. This is the same shape `scope()' takes as input,
+				* so callers can round-trip via `scope(`r(inferred_scope)')'.
+				* Each segment uses the level-i alias when available, else
+				* the raw scope_level_i value (truncated for safety).
+				* ─────────────────────────────────────────────────────────
+				local _scope_str ""
+				forval _i = 1/`_display_depth' {
+					if ("`_alias_`_i''" != "") {
+						local _seg "`_alias_`_i''"
+					}
+					else {
+						local _seg "`_inferred_`_i''"
+						if (strlen("`_seg'") > 60) local _seg = substr("`_seg'", 1, 57) + "..."
+					}
+					if (`_i' == 1) local _scope_str `""`_seg'""'
+					else local _scope_str `"`_scope_str' "`_seg'""'
+				}
+
+				* Banner adds a `({it:fullname})' aside at depth 1 when the
+				* alias differs from the full scope name, so the user sees
+				* what "LISA" is short for. Depth >= 2 omits the aside —
+				* the multi-token form is already self-documenting.
+				if (`_display_depth' == 1 ///
+					& "`_alias1'" != "" ///
+					& "`_alias1'" != "`_inferred_1'") {
 					local _fn "`_inferred_1'"
 					if (strlen("`_fn'") > 40) local _fn = substr("`_fn'", 1, 37) + "..."
-					local display_name "`_alias1' ({it:`_fn'})"
+					local display_name `""`_alias1'" ({it:`_fn'})"'
 				}
 				else {
-					local _fn "`_inferred_1'"
-					if (strlen("`_fn'") > 60) local _fn = substr("`_fn'", 1, 57) + "..."
-					local display_name "`_fn'"
+					local display_name `"`_scope_str'"'
 				}
 
 				local match_pct = round(`max_matches' / `n_datavars' * 100, 1)
 
 				if (`match_pct' >= 10) {
 					if "`quiet'" == "" {
-						di as text "  Primary `l1_title': {result:`display_name'}, `max_matches'/`n_datavars' ({result:`match_pct'%})"
+						di as text `"  Primary `l1_title': {result:`display_name'}, `max_matches'/`n_datavars' ({result:`match_pct'%})"'
 					}
 					return scalar has_strong_primary = 1
 				}
 				else {
 					if "`quiet'" == "" {
-						di as text "  No strong primary `l1_title' (top: {result:`display_name'}, `max_matches'/`n_datavars')"
+						di as text `"  No strong primary `l1_title' (top: {result:`display_name'}, `max_matches'/`n_datavars')"'
 					}
 					return scalar has_strong_primary = 0
 				}
@@ -2694,18 +2891,21 @@ program define _al_collapse_v2, rclass
 					quietly replace _is_primary = 0 if scope_level_`_i' != "`_inferred_`_i''"
 				}
 
-				* Compact display: alias if available, else truncated name
+				* Compact display: alias if available, else truncated name.
+				* This is the level-1 form used by `r(primary)' so iterative
+				* pinning via scope("`r(primary)'") stays single-token.
 				local _compact "`_alias1'"
 				if ("`_compact'" == "" | "`_compact'" == ".") {
 					local _compact "`_inferred_1'"
 					if (strlen("`_compact'") > 40) local _compact = substr("`_compact'", 1, 37) + "..."
 				}
-				return local inferred_register "`display_name'"
-				return local inferred_display "`display_name'"
+				return local inferred_scope   `"`_scope_str'"'
+				return local inferred_display `"`display_name'"'
 				return local inferred_compact "`_compact'"
 				return scalar match_pct = `match_pct'
 				return scalar primary_matches = `max_matches'
 				return scalar n_datavars = `n_datavars'
+				return scalar display_depth = `_display_depth'
 			}
 			else {
 				* Inference ran but no strong primary. Leave _is_primary
@@ -2987,7 +3187,7 @@ end
 * surfaces the error with its own copy (different phrasing for scope-drill
 * vs collapse). Short-circuits on first miss.
 *
-* This is the ONE place scope filtering lives; both `_autolabel_scope`
+* This is the ONE place scope filtering lives; both `_al_scope`
 * (drills scope.dta) and `_al_collapse_v2` (drills variables.dta joined
 * to scope) delegate here. Same semantics, no drift.
 *
