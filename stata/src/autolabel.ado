@@ -246,12 +246,14 @@ program define autolabel, rclass
 	}
 	
 	
-	* Migrate legacy autolabel_keys → autolabel (one-time rename)
+	* Migrate legacy autolabel_keys → autolabel (one-time rename).
+	* Directory existence checks use _rs_utils confirmdir (cap cd) — `confirm
+	* file dir/.` returns r(601) for directories on Stata for Windows.
 	local legacy_dir "`registream_dir'/autolabel_keys"
-	cap confirm file "`legacy_dir'/."
-	if (_rc == 0) {
-		cap confirm file "`autolabel_dir'/."
-		if (_rc != 0) {
+	_rs_utils confirmdir "`legacy_dir'"
+	if (r(exists) == 1) {
+		_rs_utils confirmdir "`autolabel_dir'"
+		if (r(exists) == 0) {
 			if "`c(os)'" == "Windows" {
 				cap shell move "`legacy_dir'" "`autolabel_dir'"
 			}
