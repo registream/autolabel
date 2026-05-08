@@ -1,6 +1,6 @@
 Package: autolabel
 Title: Apply Variable and Value Labels to Register Data
-Version: 3.0.0
+Version: 3.0.1
 Authors@R: c(
     person("Jeffrey", "Clark", role = c("aut", "cre"),
            email = "jeffrey@registream.org"),
@@ -15,12 +15,13 @@ License: BSD_3_clause + file LICENSE
 Depends:
     R (>= 4.1)
 Imports:
-    registream (>= 3.0.0),
+    registream (>= 3.0.1),
     haven
 Suggests:
     testthat (>= 3.0.0),
     withr,
     knitr,
-    rmarkdown
+    rmarkdown,
+    data.table
 Encoding: UTF-8
 Config/testthat/edition: 3

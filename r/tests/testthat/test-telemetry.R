@@ -21,7 +21,7 @@ test_that("log_and_heartbeat() emits autolabel + core banner but not datamirror"
     .package = "registream"
   )
 
-  msgs <- testthat::capture_messages(log_and_heartbeat("autolabel"))
+  msgs <- testthat::capture_messages(autolabel:::log_and_heartbeat("autolabel"))
   text <- paste(msgs, collapse = "\n")
 
   expect_match(text, "A new version of registream is available", fixed = TRUE)
@@ -51,7 +51,7 @@ test_that("log_and_heartbeat() is silent when no updates are reported", {
     .package = "registream"
   )
 
-  msgs <- testthat::capture_messages(log_and_heartbeat("autolabel"))
+  msgs <- testthat::capture_messages(autolabel:::log_and_heartbeat("autolabel"))
   expect_length(msgs, 0)
 })
 
@@ -64,7 +64,7 @@ test_that("log_and_heartbeat() swallows heartbeat errors silently", {
     .package = "registream"
   )
 
-  expect_no_error(log_and_heartbeat("autolabel"))
-  msgs <- testthat::capture_messages(log_and_heartbeat("autolabel"))
+  expect_no_error(autolabel:::log_and_heartbeat("autolabel"))
+  msgs <- testthat::capture_messages(autolabel:::log_and_heartbeat("autolabel"))
   expect_length(msgs, 0)
 })

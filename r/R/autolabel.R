@@ -26,6 +26,7 @@ autolabel.data.frame <- function(x,
   label_type <- match.arg(label_type)
   if (!isTRUE(dryrun)) log_and_heartbeat("autolabel")
 
+  ensure_bundle(domain, lang, directory = directory)
   bundle <- registream::load_bundle(domain, lang, directory = directory)
 
   datavars <- if (is.null(scope)) colnames(x) else NULL

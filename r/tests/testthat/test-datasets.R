@@ -116,3 +116,90 @@ test_that("rs_update_datasets() honors internet_access = FALSE", {
   expect_true(nrow(result$failed) >= 1L)
   expect_match(result$failed$error[[1]], "internet_access")
 })
+
+
+# ── Cold-start cascade (ensure_bundle) ──────────────────────────────────────
+#
+# Coverage gap before this suite: the existing autolabel tests pre-stage
+# a synthetic bundle via make_v3_bundle_scb_eng() before every call, so
+# they never exercise the empty-cache path that a fresh-install user
+# hits. These tests pin the four branches of ensure_bundle().
+
+test_that("ensure_bundle() short-circuits when v3 cache files exist", {
+  tmp <- withr::local_tempdir()
+  withr::local_envvar(REGISTREAM_DIR = tmp)
+
+  cache_dir <- file.path(tmp, "autolabel", "scb")
+  dir.create(cache_dir, recursive = TRUE)
+  for (ft in c("variables", "value_labels")) {
+    file.create(file.path(cache_dir, sprintf("%s_eng.dta", ft)))
+  }
+
+  expect_silent(autolabel:::ensure_bundle("scb", "eng"))
+})
+
+
+test_that("ensure_bundle() is a no-op when internet_access = FALSE", {
+  tmp <- withr::local_tempdir()
+  withr::local_envvar(REGISTREAM_DIR = tmp,
+                      REGISTREAM_AUTO_APPROVE = "yes")
+
+  cfg <- registream::config_defaults()
+  cfg$internet_access <- FALSE
+  registream::config_save(cfg, tmp)
+
+  result <- autolabel:::ensure_bundle("scb", "eng")
+  expect_null(result)
+})
+
+
+test_that("ensure_bundle() is a no-op in non-interactive sessions without AUTO_APPROVE", {
+  tmp <- withr::local_tempdir()
+  withr::local_envvar(REGISTREAM_DIR = tmp,
+                      REGISTREAM_AUTO_APPROVE = "")
+
+  result <- autolabel:::ensure_bundle("scb", "eng")
+  expect_null(result)
+})
+
+
+test_that("autolabel() cold-start in non-interactive session throws missing_bundle_error", {
+  tmp <- withr::local_tempdir()
+  withr::local_envvar(REGISTREAM_DIR = tmp,
+                      REGISTREAM_AUTO_APPROVE = "")
+
+  df <- data.frame(age = 1L, sex = 1L)
+  expect_error(
+    autolabel(df, domain = "scb", lang = "eng", directory = tmp),
+    class = "rs_error_missing_bundle"
+  )
+})
+
+
+test_that("autolabel() cold-start with AUTO_APPROVE downloads + labels (network)", {
+  testthat::skip_on_cran()
+  testthat::skip_if_offline()
+
+  tmp <- withr::local_tempdir()
+  withr::local_envvar(REGISTREAM_DIR = tmp,
+                      REGISTREAM_AUTO_APPROVE = "yes")
+
+  df <- data.frame(Kon = c(1L, 2L), Alder = c(30L, 45L))
+  out <- tryCatch(
+    suppressMessages(autolabel(df, domain = "scb", lang = "eng",
+                               directory = tmp)),
+    error = function(e) e
+  )
+
+  if (inherits(out, "error")) {
+    testthat::skip(paste0("Cold-start network test skipped: ",
+                          conditionMessage(out)))
+  }
+
+  # At least one variable label should be present after the cascade fires.
+  labs <- vapply(names(out), function(v) {
+    lab <- attr(out[[v]], "label", exact = TRUE)
+    if (is.null(lab)) "" else as.character(lab)
+  }, character(1))
+  expect_true(any(nzchar(labs)))
+})

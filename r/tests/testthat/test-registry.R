@@ -5,7 +5,7 @@ test_that("read_registry() on a missing file returns an empty canonical frame", 
   df <- read_registry()
   expect_s3_class(df, "data.frame")
   expect_identical(nrow(df), 0L)
-  expect_identical(colnames(df), REGISTRY_COLUMNS)
+  expect_identical(colnames(df), autolabel:::REGISTRY_COLUMNS)
 })
 
 
@@ -26,7 +26,7 @@ test_that("write_registry_entry() inserts a new row with all REGISTRY_COLUMNS", 
 
   df <- read_registry()
   expect_identical(nrow(df), 1L)
-  expect_identical(colnames(df), REGISTRY_COLUMNS)
+  expect_identical(colnames(df), autolabel:::REGISTRY_COLUMNS)
   expect_identical(df$dataset_key[[1]], "scb_variables_eng")
   expect_identical(df$file_size_dta[[1]], "1234")
   expect_identical(df$file_size_csv[[1]], "5678")
@@ -129,7 +129,7 @@ test_that("REGISTRY_COLUMNS order is pinned for cross-client compat", {
   # this order with a corresponding change in stata _al_store_meta
   # and python _datasets.REGISTRY_COLUMNS.
   expect_identical(
-    REGISTRY_COLUMNS,
+    autolabel:::REGISTRY_COLUMNS,
     c("dataset_key", "domain", "type", "lang", "version", "schema",
       "downloaded", "source", "file_size_dta", "file_size_csv",
       "last_checked")

@@ -10,3 +10,8 @@ metadata-v2-sample/
 
 # OS files
 .DS_Store
+
+# R session artifacts
+.Rhistory
+.RData
+.Ruserdata

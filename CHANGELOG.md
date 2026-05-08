@@ -1,5 +1,15 @@
 # Autolabel Changelog
 
+This file tracks ecosystem-level autolabel releases. Per-language details live in:
+
+- R port: [`r/NEWS.md`](r/NEWS.md)
+- Stata port: tracked here under each version's "Stata" section.
+- Python port: tracked here under each version's "Python" section.
+
+## v3.0.1 (2026-05-08) — R port only
+
+R-port patch shipping reliability + performance fixes for cold-start, value-label parsing of mixed-coded character variables, and scope/release pinning. Stata and Python clients are unchanged. See [`r/NEWS.md`](r/NEWS.md) for the full list.
+
 ## v3.0.0 (2026-04-08)
 
 First release as a standalone module (split from RegiStream monorepo).

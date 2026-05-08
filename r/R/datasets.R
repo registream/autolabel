@@ -114,6 +114,27 @@ rs_update_datasets <- function(domain,
   on.exit(unlink(stage_dir, recursive = TRUE, force = TRUE), add = TRUE)
   utils::unzip(zip_path, exdir = stage_dir)
 
+  # Manifest is a plain CSV (key/value), single chunk, no DTA conversion.
+  # Without it on disk, `load_bundle()` falls back to `core_only` mode
+  # and scope/release pinning is silently disabled. Stata's
+  # `_al_download_bundle` (autolabel/stata/src/_al_utils.ado:280) puts
+  # manifest in its file-type loop; we copy the same behavior here.
+  manifest_chunks <- list.files(stage_dir, pattern = "\\.csv$",
+                                recursive = TRUE, full.names = TRUE)
+  manifest_chunks <- sort(manifest_chunks[
+    grepl("/manifest/", manifest_chunks, fixed = TRUE)
+  ])
+  if (length(manifest_chunks) > 0L) {
+    manifest_dst <- registream::bundle_path(domain, "manifest", lang,
+                                            ext = "csv",
+                                            directory = directory)
+    dir.create(dirname(manifest_dst), recursive = TRUE, showWarnings = FALSE)
+    tryCatch(
+      file.copy(manifest_chunks[[1L]], manifest_dst, overwrite = TRUE),
+      error = function(e) invisible(NULL)
+    )
+  }
+
   # Process each v3 file type. Optional manifest is plain CSV; scope /
   # release_sets are augmentation tables. Variables + value_labels are
   # strictly required.
@@ -186,6 +207,91 @@ rs_update_datasets <- function(domain,
   }
 
   result
+}
+
+
+# Cold-start cascade: when a fresh-install user calls autolabel() and the
+# metadata bundle isn't on disk, prompt them to download. Mirrors the
+# Stata `_al_ensure_bundle` 3-state cascade in `_al_utils.ado:83`. Lives
+# in the autolabel package (not registream core) because
+# rs_update_datasets() is here -- registream provides the loader +
+# downloader primitives, autolabel glues them into the cold-start UX.
+#
+# Behavior matrix:
+#   cache already present              -> no-op
+#   internet_access disabled           -> no-op (load_bundle throws cleanly)
+#   non-interactive + no AUTO_APPROVE  -> no-op (CRAN / CI / script-safe)
+#   interactive (or AUTO_APPROVE=yes)  -> prompt + download
+#
+# Returning silently on the no-op branches is intentional: the immediate
+# next call (registream::load_bundle) raises `rs_error_missing_bundle`
+# which already gives the user the explicit `rs_update_datasets(...)`
+# escape hatch. We never want this helper to throw a different error
+# than the one users have been documented against.
+ensure_bundle <- function(domain, lang, directory = NULL) {
+  var_dta <- registream::bundle_path(domain, "variables", lang,
+                                     ext = "dta", directory = directory)
+  val_dta <- registream::bundle_path(domain, "values", lang,
+                                     ext = "dta", directory = directory)
+  if (file.exists(var_dta) && file.exists(val_dta)) {
+    return(invisible(NULL))
+  }
+
+  cfg <- registream::config_load(directory)
+  if (!isTRUE(cfg$internet_access)) {
+    return(invisible(NULL))
+  }
+
+  auto_approve <- identical(
+    tolower(Sys.getenv("REGISTREAM_AUTO_APPROVE", "")),
+    "yes"
+  )
+  if (!interactive() && !auto_approve) {
+    return(invisible(NULL))
+  }
+
+  if (auto_approve) {
+    message(sprintf(
+      "Metadata not cached for %s/%s. [AUTO-APPROVED]", domain, lang
+    ))
+  } else {
+    response <- prompt_download_bundle(domain, lang)
+    if (!identical(response, "yes")) {
+      return(invisible(NULL))
+    }
+  }
+
+  message(sprintf("Downloading metadata for %s/%s...", domain, lang))
+  result <- rs_update_datasets(domain = domain, lang = lang,
+                               directory = directory)
+  if (!success_of(result)) {
+    err <- if (nrow(result$failed) > 0L) result$failed$error[[1]] else "unknown"
+    message(sprintf("  Download failed: %s", err))
+  }
+  invisible(result)
+}
+
+
+# Yes/no prompt for the cold-start cascade. Mirrors Stata's
+# `_rs_utils prompt` UX: retries on invalid input, treats EOF / empty /
+# `q` as a decline. The keystroke here is the CRAN-sanctioned
+# "confirmation from the user" that authorises the subsequent network
+# call + cache write.
+prompt_download_bundle <- function(domain, lang) {
+  cat("\n")
+  cat(sprintf("Metadata not cached for %s/%s.\n", domain, lang))
+  repeat {
+    raw <- tryCatch(
+      readline("Download from RegiStream? (yes/no): "),
+      error = function(e) ""
+    )
+    ans <- tolower(trimws(as.character(raw)))
+    if (ans %in% c("yes", "y")) return("yes")
+    if (ans %in% c("no", "n", "")) return("no")
+    if (ans %in% c("exit", "quit", "q")) return("no")
+    cat(sprintf("Invalid response %s. Please type 'yes' or 'no'.\n",
+                shQuote(ans)))
+  }
 }
 
 
@@ -336,15 +442,20 @@ resolve_bundle_version <- function(domain, lang, version) {
 # `<bundle_root>/<folder>/*.csv`, e.g.
 # `scb_eng/variables/0000.csv`, `scb_eng/value_labels/0000.csv`, etc.
 # Returns NULL if the folder has no matching CSVs.
+#
+# Performance: SCB's value_labels folder is ~78 chunks / ~516 MB
+# uncompressed (each row carries a JSON blob in `value_labels_json`).
+# base R's `read.csv` lexer takes minutes on this and was the dominant
+# cost in `rs_update_datasets()`. We use `data.table::fread` when
+# available (10-100x faster, single-pass C lexer) and fall back to
+# `read.csv` when the user hasn't installed it. data.table is in
+# Suggests, not Imports, to keep the dep tree lean.
 extract_and_concat <- function(stage_dir, folder) {
-  # find all CSV files under any subdirectory whose name matches `folder`
   all_csv <- list.files(stage_dir, pattern = "\\.csv$", recursive = TRUE,
                         full.names = TRUE)
   if (length(all_csv) == 0L) {
     stop("Staged bundle contains no .csv files", call. = FALSE)
   }
-
-  # Filter to those inside a `<folder>/` path segment
   match_pattern <- sprintf("/%s/", folder)
   matched <- all_csv[grepl(match_pattern, all_csv, fixed = TRUE)]
   if (length(matched) == 0L) {
@@ -353,13 +464,45 @@ extract_and_concat <- function(stage_dir, folder) {
   matched <- sort(matched)
 
   dfs <- lapply(matched, read_csv_with_delimiter_fallback)
-  do.call(rbind, dfs)
+  if (requireNamespace("data.table", quietly = TRUE)) {
+    as.data.frame(data.table::rbindlist(dfs, use.names = TRUE, fill = TRUE),
+                  stringsAsFactors = FALSE)
+  } else {
+    do.call(rbind, dfs)
+  }
 }
 
 
 # Try semicolon delimiter first; fall back to comma if only one column
-# results. Mirrors Python's `_read_csv_with_delimiter_fallback`.
+# results. Mirrors Python's `_read_csv_with_delimiter_fallback`. Uses
+# `data.table::fread` (Suggests) when available -- SCB's value_labels
+# CSV is ~516 MB across 78 chunks and base `read.csv` is impractical
+# at that size. Falls back to base R for users without data.table.
+#
+# fread quirk: as of data.table 1.16.x, fread strips outer quotes but
+# does NOT unescape doubled quotes (`""` -> `"`) inside fields. The SCB
+# bundle's `value_labels_json` and `value_labels_stata` columns contain
+# embedded quotes that are CSV-escaped on disk; without post-processing,
+# the Stata-format parser sees `""0""` instead of `"0"` and produces
+# garbage labels (which then duplicate and trip `haven::labelled`'s
+# uniqueness check). `unescape_doubled_quotes()` undoes the CSV
+# double-quote escaping in every character column, which is a no-op
+# for fields without embedded quotes (the common case).
 read_csv_with_delimiter_fallback <- function(path) {
+  if (requireNamespace("data.table", quietly = TRUE)) {
+    df <- tryCatch(
+      data.table::fread(path, sep = ";", encoding = "UTF-8",
+                        colClasses = "character", na.strings = "",
+                        data.table = FALSE, showProgress = FALSE),
+      error = function(e) NULL
+    )
+    if (is.null(df) || ncol(df) <= 1L) {
+      df <- data.table::fread(path, sep = ",", encoding = "UTF-8",
+                              colClasses = "character", na.strings = "",
+                              data.table = FALSE, showProgress = FALSE)
+    }
+    return(unescape_doubled_quotes(df))
+  }
   df <- tryCatch(
     utils::read.csv(path, sep = ";", encoding = "UTF-8",
                     stringsAsFactors = FALSE, check.names = FALSE,
@@ -370,6 +513,20 @@ read_csv_with_delimiter_fallback <- function(path) {
   utils::read.csv(path, sep = ",", encoding = "UTF-8",
                   stringsAsFactors = FALSE, check.names = FALSE,
                   na.strings = "", colClasses = "character")
+}
+
+
+# Undo CSV `""` -> `"` escaping on every character column in `df`.
+# Cheap (vectorized gsub, fixed-string match) and a no-op for fields
+# without embedded quotes. Compensates for the fread quirk noted in
+# `read_csv_with_delimiter_fallback`.
+unescape_doubled_quotes <- function(df) {
+  for (col in colnames(df)) {
+    if (is.character(df[[col]])) {
+      df[[col]] <- gsub('""', '"', df[[col]], fixed = TRUE)
+    }
+  }
+  df
 }
 
 
