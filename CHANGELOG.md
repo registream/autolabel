@@ -6,7 +6,9 @@ This file tracks ecosystem-level autolabel releases. Per-language details live i
 - Stata port: tracked here under each version's "Stata" section.
 - Python port: tracked here under each version's "Python" section.
 
-## v3.0.1 (2026-05-08) — R port only
+## v3.0.1 (2026-05-08)
+
+R port only.
 
 R-port patch shipping reliability + performance fixes for cold-start, value-label parsing of mixed-coded character variables, and scope/release pinning. Stata and Python clients are unchanged. See [`r/NEWS.md`](r/NEWS.md) for the full list.
 
@@ -37,7 +39,7 @@ First release as a standalone module (split from RegiStream monorepo).
 ### Architecture Changes
 
 - **Modular separation**: autolabel is now an independent package that depends on `registream` core for config, telemetry, and utilities.
-- **Dataset management moved to autolabel**: `scan_datasets`, `check_datasets_bulk`, `update_datasets_interactive`, `rebuild_datasets_csv` — previously in core `_rs_updates.ado`, now in `_rs_autolabel_utils.ado`.
+- **Dataset management moved to autolabel**: `scan_datasets`, `check_datasets_bulk`, `update_datasets_interactive`, `rebuild_datasets_csv` (previously in core `_rs_updates.ado`, now in `_rs_autolabel_utils.ado`).
 - **Schema validation moved to autolabel**: `_rs_validate_schema.ado` now lives in the autolabel package.
 - **Config format**: `config_stata.yaml` replaced with `config_stata.csv` (simpler key;value format, native Stata I/O).
 - **Data directory**: `~/.registream/autolabel_keys/` renamed to `~/.registream/autolabel/`.
