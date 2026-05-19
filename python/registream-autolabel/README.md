@@ -136,7 +136,7 @@ the [institutional setup guide](https://registream.org/docs/install/institutiona
 ## Citation
 
 ```
-Clark, J. & Wen, J. (2024–). RegiStream: Infrastructure for Register Data Research. https://registream.org
+Clark, J. & Wen, J. (2024). RegiStream: Infrastructure for Register Data Research. https://registream.org
 ```
 
 `registream.autolabel.cite()` returns the versioned APA form.
