@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import io
 import logging
+import shutil
 import zipfile
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -118,64 +119,99 @@ def update_datasets(
 
     result = DownloadResult(domain=domain, lang=lang)
 
-    if not force and _bundle_cached(domain, lang, dir_):
+    # Core-only skip, matching Stata `_al_download_bundle` (_al_utils.ado:254-264)
+    # and R `rs_update_datasets`: a usable cache is variables + values. Requiring
+    # the augmentation files (manifest/scope/release_sets) here would re-run the
+    # whole cascade on a valid core-only cache that Stata and R skip, and would
+    # contradict the cold-start `ensure_bundle` gate below, which is core-only for
+    # the same reason. `force` remains the explicit "re-pull everything" lever.
+    if not force and _bundle_cached(domain, lang, dir_, require_augmentation=False):
         result.skipped.append(f"{domain}_{lang}")
         return result
 
-    from registream.config import load as load_config
-
-    cfg = load_config(dir_)
-    if not cfg.internet_access:
-        if _bundle_cached(domain, lang, dir_, require_augmentation=False):
-            result.skipped.append(f"{domain}_{lang}")
-            return result
-        result.failed.append(
-            (f"{domain}_{lang}", "Cannot download: internet_access is disabled.")
-        )
-        return result
-
-    try:
-        actual_version, bundle_schema = _resolve_version(domain, lang, version)
-    except Exception as exc:
-        result.failed.append((f"{domain}_{lang}", str(exc)))
-        return result
-
-    try:
-        validate_schema_version(bundle_schema)
-    except Exception as exc:
-        result.failed.append((f"{domain}_{lang}", str(exc)))
-        return result
-
+    # ---- States A/B: build from a pre-staged bundle on disk (offline) ----
+    # Mirrors Stata `_al_ensure_bundle` (autolabel/stata/src/_al_utils.ado:93):
+    # a pre-extracted folder (State A) or a pre-staged ZIP (State B) is used
+    # ahead of the internet gate, so air-gapped users (e.g. SCB MONA) can build
+    # the cache with no network. ``force`` skips them for a fresh re-pull.
+    source: tuple[str, object] | None = None
+    actual_version = ""
+    bundle_schema = "2.0"
+    from_api = True          # States A/B set this False (registry + cleanup)
+    consume_path: Path | None = None  # staging input to erase after a local build
     if not force:
-        try:
-            approved = confirm(
-                f"\nDataset bundle not cached for {domain}/{lang} "
-                f"(version {actual_version}).\n"
-                "Download autolabel bundle "
-                "(manifest + variables + value_labels + scope + release_sets)?"
+        local = _find_local_bundle(domain, lang, version, autolabel_dir)
+        if local is not None:
+            kind, path, parsed_version = local
+            from_api = False
+            consume_path = path
+            source = (
+                ("folder", path) if kind == "folder" else ("zip", path.read_bytes())
             )
-        except PromptDeclined as exc:
+            actual_version = parsed_version
+            _log.info(
+                "Building %s/%s metadata from %s (no download).", domain, lang, path
+            )
+
+    if source is None:
+        from registream.config import load as load_config
+
+        cfg = load_config(dir_)
+        if not cfg.internet_access:
+            if _bundle_cached(domain, lang, dir_, require_augmentation=False):
+                result.skipped.append(f"{domain}_{lang}")
+                return result
+            result.failed.append((
+                f"{domain}_{lang}",
+                "Cannot download: internet_access is disabled. To build offline, "
+                f"pre-stage the bundle ZIP at "
+                f"{autolabel_dir / f'{domain}_{lang}_v<version>.zip'} (or its "
+                f"extracted folder at {autolabel_dir / f'{domain}_{lang}'}/).",
+            ))
+            return result
+
+        try:
+            actual_version, bundle_schema = _resolve_version(domain, lang, version)
+        except Exception as exc:
             result.failed.append((f"{domain}_{lang}", str(exc)))
             return result
-        if not approved:
-            result.failed.append((f"{domain}_{lang}", "Download declined by user."))
+
+        try:
+            validate_schema_version(bundle_schema)
+        except Exception as exc:
+            result.failed.append((f"{domain}_{lang}", str(exc)))
             return result
 
-    api_url = (
-        f"{get_api_host()}/api/v1/datasets/{domain}/variables/{lang}/{actual_version}"
-    )
-    try:
-        response = requests.get(api_url, timeout=DOWNLOAD_TIMEOUT_SECONDS)
-        response.raise_for_status()
-    except Exception as exc:
-        result.failed.append((f"{domain}_{lang}", str(exc)))
-        return result
+        if not force:
+            try:
+                approved = confirm(
+                    f"\nDataset bundle not cached for {domain}/{lang} "
+                    f"(version {actual_version}).\n"
+                    "Download autolabel bundle "
+                    "(manifest + variables + value_labels + scope + release_sets)?"
+                )
+            except PromptDeclined as exc:
+                result.failed.append((f"{domain}_{lang}", str(exc)))
+                return result
+            if not approved:
+                result.failed.append((f"{domain}_{lang}", "Download declined by user."))
+                return result
 
-    zip_bytes = response.content
+        api_url = (
+            f"{get_api_host()}/api/v1/datasets/{domain}/variables/{lang}/{actual_version}"
+        )
+        try:
+            response = requests.get(api_url, timeout=DOWNLOAD_TIMEOUT_SECONDS)
+            response.raise_for_status()
+        except Exception as exc:
+            result.failed.append((f"{domain}_{lang}", str(exc)))
+            return result
+
+        source = ("zip", response.content)
 
     for folder, ft in _BUNDLE_FILES:
         try:
-            df = _extract_and_concat(zip_bytes, folder=folder)
+            df = _concat_bundle_files(source, folder=folder)
         except Exception as exc:
             if ft in _REQUIRED_TYPES:
                 result.failed.append((f"{domain}_{ft}_{lang}", str(exc)))
@@ -222,22 +258,67 @@ def update_datasets(
                 pyreadstat.write_dta(df, str(dta_full))
                 file_size_dta = dta_full.stat().st_size
 
-            write_registry_entry(
-                directory=dir_,
-                domain=domain,
-                file_type=ft,
-                lang=lang,
-                version=actual_version,
-                schema=bundle_schema,
-                file_size_dta=file_size_dta,
-                file_size_csv=csv_full.stat().st_size,
-            )
+            # Register the cache entry ONLY for fresh API downloads. Pre-staged
+            # builds (States A/B) leave the cache index alone, mirroring Stata
+            # (_al_utils.ado:396-403): the user told us where the files are, not
+            # what release line they track, so registering would invite spurious
+            # update prompts against an unknown provenance.
+            if from_api:
+                write_registry_entry(
+                    directory=dir_,
+                    domain=domain,
+                    file_type=ft,
+                    lang=lang,
+                    version=actual_version,
+                    schema=bundle_schema,
+                    file_size_dta=file_size_dta,
+                    file_size_csv=csv_full.stat().st_size,
+                )
             result.files.append(filename if ft != "manifest" else csv_name)
         except Exception as exc:
             result.failed.append((f"{domain}_{ft}_{lang}", str(exc)))
             _log.warning("Processing failed for %s/%s/%s: %s", domain, ft, lang, exc)
 
+    # Consume the staging input after a successful local build, mirroring Stata
+    # (_al_utils.ado:406-410): a State A extracted folder and a State B staged
+    # ZIP are erased once the cache is built, leaving only the final cache in
+    # ``autolabel_dir``. Skipped on any failure so the user can retry.
+    if not from_api and not result.failed and consume_path is not None:
+        try:
+            if consume_path.is_dir():
+                shutil.rmtree(consume_path, ignore_errors=True)
+            else:
+                consume_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+
     return result
+
+
+def ensure_bundle(
+    domain: str, lang: str, *, directory: Path | str | None = None
+) -> None:
+    """Cold-start cascade for the ``.autolabel()`` accessor.
+
+    Mirrors Stata ``_al_ensure_bundle`` and R ``ensure_bundle``. When the cache
+    is absent, :func:`update_datasets` runs the full cascade: a pre-staged
+    bundle (States A/B) builds with no network or prompt, otherwise the online
+    path (internet gate + confirm + download) runs. No-ops when the cache is
+    present. Never raises -- a declined or failed build leaves the subsequent
+    ``load_bundle`` to raise the documented missing-bundle error, the same one
+    users are pointed at today.
+    """
+    dir_ = _resolve_dir(directory)
+    # Gate on the two required types only (variables + values), matching R's
+    # ensure_bundle (datasets.R) and load_bundle's core-only support. Using the
+    # stricter augmentation-required check would re-prompt/re-download on every
+    # .autolabel() call against a usable core-only cache.
+    if _bundle_cached(domain, lang, dir_, require_augmentation=False):
+        return
+    try:
+        update_datasets(domain, lang, directory=directory)
+    except Exception:  # never surface a different error than load_bundle's
+        pass
 
 
 def _bundle_cached(
@@ -420,6 +501,59 @@ def _resolve_version(
         elif line.startswith("schema="):
             schema_version = line[len("schema=") :].strip() or SCHEMA_VERSION
     return actual_version, schema_version
+
+
+def _find_local_bundle(
+    domain: str, lang: str, version: str, autolabel_dir: Path
+) -> tuple[str, Path, str] | None:
+    """Locate a pre-staged bundle on disk for an offline (State A/B) build.
+
+    Mirrors Stata ``_al_ensure_bundle`` (_al_utils.ado:93-147). Returns
+    ``(kind, path, version)`` or ``None``.
+
+    * State A -- a pre-extracted folder ``<autolabel_dir>/<domain>_<lang>/``
+      whose ``variables/0000.csv`` chunk is present (the unzipped layout).
+    * State B -- a pre-staged ZIP ``<autolabel_dir>/<domain>_<lang>_v*.zip``.
+      A specific requested version is matched exactly; otherwise the lexically
+      last match wins (newest, given YYYYMMDD version stamps).
+    """
+    extract_folder = autolabel_dir / f"{domain}_{lang}"
+    if (extract_folder / "variables" / "0000.csv").exists():
+        return ("folder", extract_folder, "")
+
+    pinned = version not in ("", "latest", None)
+    prefix = f"{domain}_{lang}_v"
+    candidates = sorted(
+        p
+        for p in autolabel_dir.glob(f"{prefix}*.zip")
+        if not pinned or p.name == f"{prefix}{version}.zip"
+    )
+    if candidates:
+        zip_path = candidates[-1]
+        parsed = zip_path.name[len(prefix):-len(".zip")]
+        return ("zip", zip_path, parsed)
+    return None
+
+
+def _concat_bundle_files(
+    source: tuple[str, object], folder: str
+) -> pd.DataFrame | None:
+    """Concatenate a bundle file type's chunks from a zip-bytes or folder source."""
+    kind, payload = source
+    if kind == "zip":
+        return _extract_and_concat(payload, folder=folder)  # type: ignore[arg-type]
+    return _concat_folder(payload, folder=folder)  # type: ignore[arg-type]
+
+
+def _concat_folder(stage_dir: Path, folder: str) -> pd.DataFrame | None:
+    """State A reader: concat ``<stage_dir>/**/<folder>/*.csv`` chunks."""
+    matched = sorted(
+        p for p in Path(stage_dir).rglob("*.csv") if f"/{folder}/" in p.as_posix()
+    )
+    if not matched:
+        return None
+    dfs = [_read_csv_with_delimiter_fallback(p.read_bytes()) for p in matched]
+    return pd.concat(dfs, ignore_index=True)
 
 
 def _extract_and_concat(zip_bytes: bytes, folder: str) -> pd.DataFrame | None:

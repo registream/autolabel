@@ -1,5 +1,16 @@
 # autolabel (R port) — NEWS
 
+## autolabel 3.0.2 (2026-06-18)
+
+### New features
+
+- **Offline bundle install.** `rs_update_datasets()` and the `autolabel()` cold-start now build the metadata cache from a bundle staged on disk (an extracted `<domain>_<lang>/` folder or a `<domain>_<lang>_v*.zip`) ahead of the internet gate, mirroring the Stata client. Users in secure environments (e.g. SCB MONA) can install with no network and no download prompt.
+
+### Bug fixes
+
+- **Cache CSV writes quote embedded delimiters.** `write.table()` now uses `quote = TRUE, qmethod = "double"`, so a `value_labels_json` field containing `;` (and `"`) round-trips losslessly and reads back identically in every client.
+
+
 ## autolabel 3.0.1 (2026-05-08)
 
 R-port-only patch. Stata and Python clients are unaffected.

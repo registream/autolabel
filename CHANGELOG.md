@@ -6,6 +6,23 @@ This file tracks ecosystem-level autolabel releases. Per-language details live i
 - Stata port: tracked here under each version's "Stata" section.
 - Python port: tracked here under each version's "Python" section.
 
+## v3.0.2 (2026-06-18)
+
+Stata, Python, and R ports.
+
+Adds offline metadata installs across all three clients: a bundle staged on disk (an extracted folder or a downloaded ZIP) builds the cache with no internet, so users in secure environments can install without a download. Cache CSVs are now written semicolon-delimited in Stata and quoted in R, so a cache built by one client reads correctly in the others.
+
+### Stata
+- Cache CSV is written and re-imported semicolon-delimited, matching the rest of the ecosystem.
+
+### Python
+- Offline bundle build from a pre-staged folder or ZIP, ahead of the internet gate.
+- Skip the download when the two core files are already cached (parity with Stata and R).
+
+### R
+- Offline bundle build from a pre-staged folder or ZIP, ahead of the internet gate.
+- Cache CSV writes quote embedded delimiters so values round-trip losslessly. See [`r/NEWS.md`](r/NEWS.md).
+
 ## v3.0.1 (2026-05-08)
 
 R port only.

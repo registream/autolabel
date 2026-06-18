@@ -29,6 +29,7 @@ from registream.autolabel._labels import (
 )
 from registream.autolabel._lookup import LookupResult
 from registream.autolabel._lookup import lookup as _lookup_fn
+from registream.autolabel._datasets import ensure_bundle
 from registream.autolabel._repr import LabeledView
 from registream.metadata import load_bundle
 
@@ -100,6 +101,9 @@ class RsAccessor:
         :param dryrun: return a :class:`DryRunResult` describing what
             would be stamped without mutating ``df.attrs``.
         """
+        # Cold-start cascade (mirrors Stata/R): build from a pre-staged bundle
+        # or, when online, prompt + download before loading. No-op once cached.
+        ensure_bundle(domain, lang, directory=directory)
         bundle = load_bundle(domain, lang, directory=directory)
 
         datavars = list(self._df.columns)

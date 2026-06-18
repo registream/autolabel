@@ -50,69 +50,108 @@ rs_update_datasets <- function(domain,
     return(result)
   }
 
-  # internet_access gate
-  cfg <- registream::config_load(directory)
-  if (!isTRUE(cfg$internet_access)) {
-    if (file.exists(var_dta) && file.exists(val_dta)) {
-      result$skipped <- c(result$skipped,
-                          registream::bundle_filename("variables",
-                                                      lang, ext = "dta"))
+  # ---- States A/B: build from a pre-staged bundle on disk (offline) ----
+  # Mirrors Stata `_al_ensure_bundle` (autolabel/stata/src/_al_utils.ado:93):
+  # a pre-extracted folder (State A) or a pre-staged ZIP (State B) is used
+  # ahead of the internet gate, so air-gapped users (e.g. SCB MONA) can build
+  # the cache with no network. `force` skips them to allow a fresh re-pull.
+  stage_dir      <- NULL
+  actual_version <- NULL
+  bundle_schema  <- NULL
+  from_api       <- TRUE   # States A/B set this FALSE (see registry + cleanup)
+  consume_path   <- NULL   # the staging input to erase after a local build
+  if (!isTRUE(force)) {
+    local_src <- find_local_bundle(domain, lang, version, dir_)
+    if (!is.null(local_src)) {
+      from_api     <- FALSE
+      consume_path <- local_src$path
+      if (identical(local_src$kind, "folder")) {
+        stage_dir <- local_src$path            # the extracted folder itself
+      } else {
+        stage_dir <- tempfile("registream_stage_")
+        dir.create(stage_dir, recursive = TRUE, showWarnings = FALSE)
+        on.exit(unlink(stage_dir, recursive = TRUE, force = TRUE), add = TRUE)
+        utils::unzip(local_src$path, exdir = stage_dir)
+      }
+      actual_version <- local_src$version
+      bundle_schema  <- "2.0"
+      message(sprintf("Building %s/%s metadata from %s (no download).",
+                      domain, lang, local_src$path))
+    }
+  }
+
+  if (is.null(stage_dir)) {
+    # internet_access gate
+    cfg <- registream::config_load(directory)
+    if (!isTRUE(cfg$internet_access)) {
+      if (file.exists(var_dta) && file.exists(val_dta)) {
+        result$skipped <- c(result$skipped,
+                            registream::bundle_filename("variables",
+                                                        lang, ext = "dta"))
+        return(result)
+      }
+      result$failed <- rbind(
+        result$failed,
+        data.frame(
+          file = sprintf("%s_%s", domain, lang),
+          error = sprintf(
+            paste0("Cannot download: internet_access is disabled. ",
+                   "To build offline, pre-stage the bundle ZIP at %s ",
+                   "(or its extracted folder at %s/)."),
+            file.path(dir_, sprintf("%s_%s_v<version>.zip", domain, lang)),
+            file.path(dir_, sprintf("%s_%s", domain, lang))
+          ),
+          stringsAsFactors = FALSE)
+      )
       return(result)
     }
-    result$failed <- rbind(
-      result$failed,
-      data.frame(file = sprintf("%s_%s", domain, lang),
-                 error = "Cannot download: internet_access is disabled.",
-                 stringsAsFactors = FALSE)
+
+    # Resolve version and schema from the /info endpoint.
+    resolved <- tryCatch(
+      resolve_bundle_version(domain, lang, version),
+      error = function(e) NULL
     )
-    return(result)
-  }
+    if (is.null(resolved)) {
+      result$failed <- rbind(
+        result$failed,
+        data.frame(file = sprintf("%s_%s", domain, lang),
+                   error = "Failed to resolve version via /info endpoint.",
+                   stringsAsFactors = FALSE)
+      )
+      return(result)
+    }
+    actual_version <- resolved$version
+    bundle_schema  <- resolved$schema
 
-  # Resolve version and schema from the /info endpoint.
-  resolved <- tryCatch(
-    resolve_bundle_version(domain, lang, version),
-    error = function(e) NULL
-  )
-  if (is.null(resolved)) {
-    result$failed <- rbind(
-      result$failed,
-      data.frame(file = sprintf("%s_%s", domain, lang),
-                 error = "Failed to resolve version via /info endpoint.",
-                 stringsAsFactors = FALSE)
+    # Download the bundle ZIP to tempdir.
+    api_url <- sprintf(
+      "%s/api/v1/datasets/%s/variables/%s/%s?schema_max=2.0",
+      registream::get_api_host(), domain, lang, actual_version
     )
-    return(result)
+    zip_path <- tempfile(pattern = sprintf("registream_%s_%s_", domain, lang),
+                         fileext = ".zip")
+    on.exit(unlink(zip_path, force = TRUE), add = TRUE)
+
+    download_err <- tryCatch({
+      registream::http_download_file(api_url, zip_path,
+                                     timeout_seconds = DOWNLOAD_TIMEOUT_SECONDS)
+      NULL
+    }, error = function(e) conditionMessage(e))
+    if (!is.null(download_err)) {
+      result$failed <- rbind(
+        result$failed,
+        data.frame(file = sprintf("%s_%s", domain, lang),
+                   error = download_err, stringsAsFactors = FALSE)
+      )
+      return(result)
+    }
+
+    # Stage: unzip to a temp directory.
+    stage_dir <- tempfile("registream_stage_")
+    dir.create(stage_dir, recursive = TRUE, showWarnings = FALSE)
+    on.exit(unlink(stage_dir, recursive = TRUE, force = TRUE), add = TRUE)
+    utils::unzip(zip_path, exdir = stage_dir)
   }
-  actual_version <- resolved$version
-  bundle_schema  <- resolved$schema
-
-  # Download the bundle ZIP to tempdir.
-  api_url <- sprintf(
-    "%s/api/v1/datasets/%s/variables/%s/%s?schema_max=2.0",
-    registream::get_api_host(), domain, lang, actual_version
-  )
-  zip_path <- tempfile(pattern = sprintf("registream_%s_%s_", domain, lang),
-                       fileext = ".zip")
-  on.exit(unlink(zip_path, force = TRUE), add = TRUE)
-
-  download_err <- tryCatch({
-    registream::http_download_file(api_url, zip_path,
-                                   timeout_seconds = DOWNLOAD_TIMEOUT_SECONDS)
-    NULL
-  }, error = function(e) conditionMessage(e))
-  if (!is.null(download_err)) {
-    result$failed <- rbind(
-      result$failed,
-      data.frame(file = sprintf("%s_%s", domain, lang),
-                 error = download_err, stringsAsFactors = FALSE)
-    )
-    return(result)
-  }
-
-  # Stage: unzip to a temp directory.
-  stage_dir <- tempfile("registream_stage_")
-  dir.create(stage_dir, recursive = TRUE, showWarnings = FALSE)
-  on.exit(unlink(stage_dir, recursive = TRUE, force = TRUE), add = TRUE)
-  utils::unzip(zip_path, exdir = stage_dir)
 
   # Manifest is a plain CSV (key/value), single chunk, no DTA conversion.
   # Without it on disk, `load_bundle()` falls back to `core_only` mode
@@ -173,22 +212,37 @@ rs_update_datasets <- function(domain,
                                             ext = "dta",
                                             directory = directory)
         dir.create(dirname(csv_path), recursive = TRUE, showWarnings = FALSE)
+        # quote = TRUE protects fields containing the `;` delimiter (real
+        # value_labels_json / value_labels_stata do). qmethod = "double" is
+        # required, not the default "escape": these fields also contain
+        # literal `"`, and the readers (utils::read.csv, pandas) honour only
+        # CSV-standard doubled quotes (""), not backslash escapes. Without it
+        # the column count is right but the JSON value re-reads as garbage.
+        # Matches Stata's `export delimited ... quote` and pandas to_csv.
         utils::write.table(
           df, file = csv_path, sep = ";", row.names = FALSE,
-          col.names = TRUE, quote = FALSE, na = "", fileEncoding = "UTF-8"
+          col.names = TRUE, quote = TRUE, qmethod = "double",
+          na = "", fileEncoding = "UTF-8"
         )
         haven::write_dta(df, dta_path)
 
-        write_registry_entry(
-          directory     = directory,
-          domain        = domain,
-          file_type     = ft,
-          lang          = lang,
-          version       = actual_version,
-          schema        = bundle_schema,
-          file_size_dta = file.info(dta_path)$size,
-          file_size_csv = file.info(csv_path)$size
-        )
+        # Register the cache entry ONLY for fresh API downloads. Pre-staged
+        # builds (States A/B) leave the cache index alone, mirroring Stata
+        # (_al_utils.ado:396-403): the user told us where the files are, not
+        # what release line they track, so registering would invite spurious
+        # update prompts against an unknown provenance.
+        if (from_api) {
+          write_registry_entry(
+            directory     = directory,
+            domain        = domain,
+            file_type     = ft,
+            lang          = lang,
+            version       = actual_version,
+            schema        = bundle_schema,
+            file_size_dta = file.info(dta_path)$size,
+            file_size_csv = file.info(csv_path)$size
+          )
+        }
         filename
       }
     }, error = function(e) {
@@ -206,7 +260,47 @@ rs_update_datasets <- function(domain,
     }
   }
 
+  # Consume the staging input after a successful local build, mirroring Stata
+  # (_al_utils.ado:406-410): a State A extracted folder and a State B staged
+  # ZIP are erased once the cache is built, leaving only the final cache in
+  # `autolabel_dir`. Skipped on any failure so the user can retry. Best-effort.
+  if (!from_api && success_of(result) && !is.null(consume_path) &&
+      file.exists(consume_path)) {
+    tryCatch(unlink(consume_path, recursive = TRUE, force = TRUE),
+             error = function(e) invisible(NULL))
+  }
+
   result
+}
+
+
+# Locate a pre-staged bundle on disk for an offline (State A/B) build,
+# mirroring Stata `_al_ensure_bundle` (_al_utils.ado:93-147). Returns a source
+# descriptor `list(kind, path, version)` or NULL.
+#   State A -- a pre-extracted folder `<autolabel_dir>/<domain>_<lang>/` whose
+#     `variables/0000.csv` chunk is present (the unzipped bundle layout).
+#   State B -- a pre-staged ZIP `<autolabel_dir>/<domain>_<lang>_v*.zip`. When a
+#     specific version is requested it is matched exactly; otherwise the
+#     lexically last match wins (newest, given YYYYMMDD version stamps).
+# `domain`/`lang` are lowercase alphanumeric ecosystem identifiers, so they
+# need no regex escaping here.
+find_local_bundle <- function(domain, lang, version, autolabel_dir) {
+  extract_folder <- file.path(autolabel_dir, sprintf("%s_%s", domain, lang))
+  if (file.exists(file.path(extract_folder, "variables", "0000.csv"))) {
+    return(list(kind = "folder", path = extract_folder, version = ""))
+  }
+  pinned  <- !is.null(version) && !version %in% c("", "latest")
+  ver_re  <- if (pinned) version else ".*"
+  pattern <- sprintf("^%s_%s_v%s\\.zip$", domain, lang, ver_re)
+  zips    <- sort(list.files(autolabel_dir, pattern = pattern,
+                             full.names = TRUE))
+  if (length(zips) > 0L) {
+    zip_path <- zips[[length(zips)]]
+    parsed   <- sub(sprintf("^%s_%s_v(.*)\\.zip$", domain, lang), "\\1",
+                    basename(zip_path))
+    return(list(kind = "zip", path = zip_path, version = parsed))
+  }
+  NULL
 }
 
 
@@ -235,6 +329,27 @@ ensure_bundle <- function(domain, lang, directory = NULL) {
                                      ext = "dta", directory = directory)
   if (file.exists(var_dta) && file.exists(val_dta)) {
     return(invisible(NULL))
+  }
+
+  # Offline (States A/B): a bundle pre-staged on disk is built with no network
+  # and no prompt, ahead of the internet gate -- mirrors Stata
+  # `_al_ensure_bundle` ordering (_al_utils.ado:93). This is what lets an
+  # air-gapped MONA user drop a bundle ZIP (or its extracted folder) next to
+  # the cache and have autolabel() pick it up.
+  if (!is.null(find_local_bundle(
+    domain, lang, "latest", registream::autolabel_cache_dir(directory)
+  ))) {
+    message(sprintf(
+      "Building %s/%s metadata from a local bundle (no download)...",
+      domain, lang
+    ))
+    result <- rs_update_datasets(domain = domain, lang = lang,
+                                 directory = directory)
+    if (!success_of(result)) {
+      err <- if (nrow(result$failed) > 0L) result$failed$error[[1]] else "unknown"
+      message(sprintf("  Build failed: %s", err))
+    }
+    return(invisible(result))
   }
 
   cfg <- registream::config_load(directory)
