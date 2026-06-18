@@ -339,8 +339,8 @@ program define _al_download_bundle, rclass
 			* branch). Destring numeric ID columns afterwards so merge/join
 			* semantics are preserved.
 			import delimited using "`out_csv'", clear ///
-				encoding("utf-8") bindquote(strict) maxquotedrows(unlimited) ///
-				stringcols(_all)
+				delimiter(";") encoding("utf-8") bindquote(strict) ///
+				maxquotedrows(unlimited) stringcols(_all)
 			cap destring scope_id, replace
 			cap destring value_label_id, replace
 			cap destring release_set_id, replace
@@ -478,7 +478,7 @@ program define _al_append
 		// with embedded newlines or quote chars; the next import cannot then
 		// reconstruct row boundaries and rows split/merge silently. Force
 		// quoting makes the round-trip lossless.
-		export delimited using "`output_file'", replace quote
+		export delimited using "`output_file'", replace quote delimiter(";")
 	}
 end
 
